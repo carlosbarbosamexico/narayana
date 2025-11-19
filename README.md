@@ -25,7 +25,7 @@
 
 </div>
 
-## 🚀 Overview
+## Overview
 
 NarayanaDB is a revolutionary database system that combines high-performance columnar storage with cognitive architecture, AI-powered optimization, and moral reasoning capabilities. Built from the ground up in Rust, it's designed for real-time analytics, robotics control systems, distributed applications, and AGI research.
 
