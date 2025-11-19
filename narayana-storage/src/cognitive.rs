@@ -989,72 +989,80 @@ impl CognitiveBrain {
 
     /// Automatically detect patterns from experiences
     pub fn detect_patterns_from_experiences(&self) -> Result<Vec<String>> {
-        let experiences = self.experiences.read();
-        let total_experiences = experiences.len();
-        
-        // Limit processing to avoid performance issues with large datasets
-        // Process in batches or limit to most recent experiences
-        let max_experiences_to_process = 10_000.min(total_experiences);
-        
-        let mut detected_patterns = Vec::new();
+        // Collect data while holding read lock, then release it before calling learn_pattern
+        let (total_experiences, pattern_groups) = {
+            let experiences = self.experiences.read();
+            let total = experiences.len();
+            
+            // Limit processing to avoid performance issues with large datasets
+            let max_experiences_to_process = 10_000.min(total);
 
-        // Group experiences by similar conditions and outcomes
-        // Use a more efficient key: hash of event_type + simplified observation/outcome
-        let mut pattern_groups: HashMap<u64, Vec<&Experience>> = HashMap::new();
+            // Group experiences by similar conditions and outcomes
+            // Use a more efficient key: hash of event_type + simplified observation/outcome
+            let mut groups: HashMap<u64, Vec<(String, serde_json::Value, serde_json::Value, serde_json::Value)>> = HashMap::new();
 
-        let mut processed = 0;
-        for experience in experiences.values() {
-            if processed >= max_experiences_to_process {
-                break;
-            }
-            
-            // Create pattern key using hash instead of full JSON serialization
-            let mut hasher = DefaultHasher::new();
-            experience.event_type.hash(&mut hasher);
-            
-            // Use a simplified key from observation/outcome instead of full JSON
-            // Extract key fields if they exist, otherwise use a hash of the JSON
-            let obs_key = if experience.observation.is_object() {
-                // Use pattern_id or sequence if available (common in benchmarks)
-                experience.observation.get("pattern_id")
-                    .or_else(|| experience.observation.get("sequence"))
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0)
-            } else {
-                0
-            };
-            obs_key.hash(&mut hasher);
-            
-            // Hash outcome if present
-            if let Some(outcome) = &experience.outcome {
-                if outcome.is_object() {
-                    outcome.get("result")
-                        .or_else(|| outcome.get("success"))
-                        .and_then(|v| v.as_u64().or_else(|| v.as_bool().map(|b| if b { 1 } else { 0 })))
-                        .unwrap_or(0)
-                        .hash(&mut hasher);
+            let mut processed = 0;
+            for experience in experiences.values() {
+                if processed >= max_experiences_to_process {
+                    break;
                 }
+                
+                // Create pattern key using hash instead of full JSON serialization
+                let mut hasher = DefaultHasher::new();
+                experience.event_type.hash(&mut hasher);
+                
+                // Use a simplified key from observation/outcome instead of full JSON
+                // Extract key fields if they exist, otherwise use a hash of the JSON
+                let obs_key = if experience.observation.is_object() {
+                    // Use pattern_id or sequence if available (common in benchmarks)
+                    experience.observation.get("pattern_id")
+                        .or_else(|| experience.observation.get("sequence"))
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
+                obs_key.hash(&mut hasher);
+                
+                // Hash outcome if present
+                if let Some(outcome) = &experience.outcome {
+                    if outcome.is_object() {
+                        outcome.get("result")
+                            .or_else(|| outcome.get("success"))
+                            .and_then(|v| v.as_u64().or_else(|| v.as_bool().map(|b| if b { 1 } else { 0 })))
+                            .unwrap_or(0)
+                            .hash(&mut hasher);
+                    }
+                }
+                
+                let pattern_key = hasher.finish();
+                groups.entry(pattern_key)
+                    .or_insert_with(Vec::new)
+                    .push((
+                        experience.id.clone(),
+                        experience.observation.clone(),
+                        experience.action.clone().unwrap_or_default(),
+                        experience.outcome.clone().unwrap_or_default(),
+                    ));
+                
+                processed += 1;
             }
             
-            let pattern_key = hasher.finish();
-            pattern_groups.entry(pattern_key)
-                .or_insert_with(Vec::new)
-                .push(experience);
-            
-            processed += 1;
-        }
+            (total, groups)
+        }; // Read lock is dropped here
 
-        // Detect patterns that occur frequently
+        // Now detect patterns that occur frequently (no lock held)
+        let mut detected_patterns = Vec::new();
         for (_pattern_key, group) in pattern_groups {
             if group.len() >= 3 { // Pattern must occur at least 3 times
-                // Extract common pattern
-                let first_exp = group[0];
+                // Extract common pattern from first experience in group
+                let (experience_id, observation, action, outcome) = &group[0];
                 let pattern_id = self.learn_pattern(
-                    &first_exp.id,
+                    experience_id,
                     PatternType::Causal,
-                    first_exp.observation.clone(),
-                    first_exp.action.clone().unwrap_or_default(),
-                    first_exp.outcome.clone().unwrap_or_default(),
+                    observation.clone(),
+                    action.clone(),
+                    outcome.clone(),
                 )?;
 
                 // Update pattern frequency and confidence

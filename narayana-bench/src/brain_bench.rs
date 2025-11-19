@@ -474,8 +474,13 @@ async fn test_power_law_distribution(brain: &Arc<CognitiveBrain>) -> anyhow::Res
     
     for i in 0..num_memories {
         // Generate power-law distributed strength: P(x) ~ x^(-alpha)
+        // Using inverse CDF method: x = (1-u)^(-1/(alpha-1)) for x in [1, inf)
+        // Then normalize to [0, 1] range
         let u: f64 = rng.gen();
-        let strength = (1.0 - u).powf(1.0 / (1.0 - alpha)).min(1.0);
+        // Generate power law value, then normalize to [0, 1]
+        let power_law_value = (1.0 - u).powf(-1.0 / (alpha - 1.0));
+        // Normalize: map from [1, inf) to [0, 1] using 1 - 1/x
+        let strength = (1.0 - 1.0 / power_law_value).max(0.0).min(1.0);
         
         let content = json!({
             "event": format!("powerlaw_test_{}", i),
@@ -542,12 +547,15 @@ async fn test_diminishing_returns(brain: &Arc<CognitiveBrain>) -> anyhow::Result
             }
         }
         
-        // Test retrieval performance
+        // Test retrieval performance - test all memories to see real scaling
         let start = Instant::now();
         let mut retrieved = 0;
-        let sample_size = size.min(1000); // Sample for large sizes
         
-        for i in 0..sample_size {
+        // For large sizes, we still test all to see real performance degradation
+        // But limit iterations to avoid timeout
+        let test_count = size.min(10_000); // Test up to 10k retrievals
+        
+        for i in 0..test_count {
             if let Some(id) = memory_ids.get(i % memory_ids.len()) {
                 if brain.access_memory(id).is_ok() {
                     retrieved += 1;
@@ -562,9 +570,10 @@ async fn test_diminishing_returns(brain: &Arc<CognitiveBrain>) -> anyhow::Result
             retrieved
         };
         
-        // Calculate efficiency (ops/sec per memory)
-        // Should decrease logarithmically: efficiency ~ 1/log(size)
-        let efficiency = ops as f64 / (size as f64).ln();
+        // Calculate efficiency (ops/sec normalized by log of size)
+        // Should decrease logarithmically: efficiency ~ ops/sec / log(size)
+        // This shows how performance degrades as memory grows
+        let efficiency = ops as f64 / (size as f64).ln().max(1.0);
         
         println!("  {:>10} | {:>12} | {:>12.2} | {:>10.2}", 
                  size, ops, duration.as_secs_f64() * 1000.0, efficiency);

@@ -32,7 +32,6 @@ pub struct LLMMessage {
 // WorldAction is defined in narayana-wld, but we need a trait or type alias
 // For now, we'll use a generic approach - the actual WorldAction will be passed from narayana-wld
 // This is a placeholder - in practice, Talking Cricket will work with narayana-wld::WorldAction
-pub use serde_json::Value as JsonValue;
 
 /// Configuration for Talking Cricket
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -301,7 +300,7 @@ impl TalkingCricket {
         let mut reasoning_parts = Vec::new();
 
         for principle in &principles {
-            let score = self.evaluate_principle(principle, action, context)?;
+            let score = self.evaluate_principle(principle, action, &context)?;
             let weight = principle.effectiveness_score.max(0.1); // Minimum weight
             
             total_score += score * weight;
@@ -512,7 +511,7 @@ impl TalkingCricket {
         use std::collections::hash_map::DefaultHasher;
         
         // Serialize to JSON string for hashing
-        let json_str = serde_json::to_string(action).unwrap_or_else(|_| format!("{:?}", action));
+        let json_str = serde_json::to_string(action).unwrap_or_else(|_| "{}".to_string());
         let mut hasher = DefaultHasher::new();
         json_str.hash(&mut hasher);
         format!("{:x}", hasher.finish())

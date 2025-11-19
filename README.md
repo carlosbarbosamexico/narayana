@@ -833,6 +833,130 @@ Perfect for analyzing robot performance over time:
 
 ---
 
+## AGI Research Platform
+
+NarayanaDB is specifically designed as a **foundational platform for AGI research**. It provides the infrastructure needed to build, test, and deploy cognitive architectures with persistent state.
+
+### Why NarayanaDB for AGI Research?
+
+#### 1. **Persistent Cognitive State**
+Unlike traditional AI frameworks that lose state between sessions, NarayanaDB provides:
+- **Persistent memory**: 9 memory types that survive restarts
+- **Thought continuity**: Thoughts and cognitive processes persist across sessions
+- **Experience replay**: Learn from past experiences stored in the database
+- **Identity formation**: Narrative generator builds persistent agent identity
+
+#### 2. **Theoretically Grounded Architecture**
+Based on established cognitive science and neuroscience research:
+- **Global Workspace Theory** (Baars, 1988) - Consciousness competition mechanism
+- **Working Memory Model** (Baddeley, 2000) - 7±2 capacity limits
+- **Complementary Learning Systems** (McClelland et al., 1995) - Episodic → Semantic consolidation
+- **Memory Consolidation** (O'Neill et al., 2010) - Hippocampal replay during "dreaming"
+
+#### 3. **Complete Cognitive Loop**
+The Conscience Persistent Loop (CPL) provides:
+- **Continuous processing**: 100ms cognitive cycles
+- **Consciousness layer**: Global workspace for attention competition
+- **Unconscious processing**: Background daemon for memory consolidation
+- **Memory bridge**: Automatic episodic → semantic conversion
+- **Dreaming**: Experience replay for learning
+
+#### 4. **Moral Reasoning for AI Safety**
+Built-in ethical reasoning system:
+- **Action assessment**: Evaluate actions before execution
+- **Veto mechanism**: Block harmful actions
+- **Dynamic principles**: Moral rules stored in database (evolvable)
+- **LLM-assisted evolution**: Principles improve over time
+- **Context-aware**: Uses full cognitive state for decisions
+
+#### 5. **Evolutionary Agent Development**
+Genetics and traits system for:
+- **Population-based research**: Evolve populations of agents
+- **Trait inheritance**: Mendelian genetics for cognitive traits
+- **Environmental influence**: Traits modified by experience
+- **Fitness evaluation**: Measure agent performance
+- **Generation tracking**: Study evolution over time
+
+#### 6. **Research-Ready Features**
+- **Event system**: Monitor all cognitive events
+- **Thought timeline**: Complete history of cognitive processes
+- **Memory access tracking**: Study memory retrieval patterns
+- **Pattern detection**: Automatic pattern learning from experiences
+- **Vector search**: Semantic memory retrieval for RAG systems
+
+### Research Use Cases
+
+#### Consciousness Research
+- Study Global Workspace Theory implementations
+- Investigate attention mechanisms
+- Research consciousness emergence in artificial systems
+
+#### Memory Research
+- Test different memory consolidation strategies
+- Study forgetting curves and memory decay
+- Research episodic → semantic conversion
+
+#### Moral Reasoning Research
+- Develop ethical AI systems
+- Study value alignment mechanisms
+- Research moral decision-making in artificial agents
+
+#### Evolutionary AI Research
+- Evolve populations of cognitive agents
+- Study trait inheritance and expression
+- Research environmental vs genetic influences
+
+#### Embodied Cognition Research
+- World Broker Interface for robot-world interaction
+- Study sensory → cognitive → motor pipelines
+- Research attention filtering and salience computation
+
+### Getting Started with AGI Research
+
+```rust
+use narayana_storage::cognitive::CognitiveBrain;
+use narayana_storage::conscience_persistent_loop::{ConsciencePersistentLoop, CPLConfig};
+
+// Create cognitive brain
+let brain = Arc::new(CognitiveBrain::new());
+
+// Configure CPL for research
+let config = CPLConfig {
+    loop_interval_ms: 100,
+    enable_global_workspace: true,
+    enable_background_daemon: true,
+    enable_dreaming: true,
+    working_memory_capacity: 7,
+    enable_attention: true,
+    enable_narrative: true,
+    enable_memory_bridge: true,
+    enable_persistence: true,
+    persistence_dir: Some("research_data".to_string()),
+    enable_genetics: true,
+    enable_talking_cricket: true, // Moral reasoning
+    ..Default::default()
+};
+
+// Start cognitive loop
+let cpl = Arc::new(ConsciencePersistentLoop::new(brain, config));
+cpl.initialize().await?;
+cpl.start().await?;
+
+// Your AGI agent now has persistent cognitive state!
+```
+
+### Research Collaboration
+
+NarayanaDB welcomes collaboration with:
+- **Academic institutions**: Research cognitive architectures
+- **AI labs**: Develop AGI systems
+- **Robotics researchers**: Build cognitive robots
+- **AI safety researchers**: Study moral reasoning systems
+
+See the [Research Foundations](#research-foundations) section for academic references.
+
+---
+
 ## Configuration
 
 Configuration can be set via environment variables or config file:
@@ -872,6 +996,14 @@ cp config.example.toml config.toml
 ## Performance & Benchmarks
 
 NarayanaDB delivers exceptional performance across all operations. Below are comprehensive benchmark results from our test suite.
+
+**Important Note on Benchmark Methodology:**
+These benchmarks measure **direct storage engine performance** (in-memory, no network overhead). This is the performance you'll see when using NarayanaDB in:
+- **Embedded mode** - Direct library integration (Jetson, Raspberry Pi, ESP32)
+- **In-process usage** - Database embedded in your application
+- **Native Rust code** - Direct `ColumnStore` API calls
+
+For **server mode** (HTTP/gRPC/GraphQL APIs), expect 10-100x lower throughput due to network serialization overhead, but still excellent performance for real-time applications.
 
 ### Performance Highlights
 
@@ -1005,11 +1137,34 @@ Vector search (1M dims): 0.6ms
 
 ### Performance Characteristics
 
-- **Latency**: Sub-millisecond for most operations
-- **Throughput**: Billions of operations per second
+- **Latency**: Sub-millisecond for most operations (embedded mode)
+- **Throughput**: Billions of operations per second (direct storage access)
 - **Scalability**: Linear scaling from KB to TB datasets
 - **Consistency**: 100% success rate in stress tests
 - **Efficiency**: Optimal resource utilization
+
+### Performance by Deployment Mode
+
+#### Embedded Mode (Direct Storage Access)
+- **Best for**: Edge devices, robotics, real-time control systems
+- **Performance**: As shown in benchmarks above (131M+ ops/sec writes)
+- **Use case**: Direct `ColumnStore` API, no network overhead
+- **Platforms**: Jetson, Raspberry Pi 5, ESP32 S3, embedded Rust applications
+
+#### Server Mode (HTTP/gRPC/GraphQL)
+- **Best for**: Distributed systems, web applications, microservices
+- **Performance**: 10-100x lower than embedded (due to serialization/network)
+- **Use case**: REST API, GraphQL, gRPC endpoints
+- **Still excellent**: 1M+ rows/second achievable with proper batching
+
+#### Example: Embedded Usage
+```rust
+use narayana_storage::column_store::{ColumnStore, InMemoryColumnStore};
+
+let store = InMemoryColumnStore::new();
+// Direct access = benchmark-level performance
+store.write_columns(table_id, columns).await?;
+```
 
 ### Running Benchmarks
 

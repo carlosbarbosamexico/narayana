@@ -102,8 +102,8 @@ impl TraitCalculator {
         // Initialize trait interactions (default: no interactions)
         let mut interactions = HashMap::new();
         let trait_types = TraitType::all();
-        for &trait1 in &trait_types {
-            for &trait2 in &trait_types {
+        for trait1 in trait_types.iter() {
+            for trait2 in trait_types.iter() {
                 if trait1 != trait2 {
                     // Default: small positive interaction
                     interactions.insert((trait1.clone(), trait2.clone()), 0.05);

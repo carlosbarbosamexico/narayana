@@ -2268,9 +2268,10 @@ impl WorkerRuntime for QuickJSRuntime {
             let process_crypto_queue = || -> Result<()> {
                 use sha2::{Sha256, Sha512, Digest};
                 use hmac::{Hmac, Mac};
-                use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead};
-                use chacha20poly1305::{ChaCha20Poly1305, KeyInit, aead::Aead};
+                use aes_gcm::{Aes256Gcm, KeyInit as AesKeyInit, aead::Aead as AesAead};
+                use chacha20poly1305::{ChaCha20Poly1305, KeyInit as ChaChaKeyInit, aead::Aead as ChaChaAead};
                 use base64::{Engine as _, engine::general_purpose};
+                use rand::RngCore;
                 
                 // Get crypto queue from JS
                 let queue_str_code = "JSON.stringify(__cryptoQueue)";
@@ -2327,7 +2328,9 @@ impl WorkerRuntime for QuickJSRuntime {
                                     })
                                 }
                                 "encrypt" => {
-                                    let algorithm = op_obj.get("algorithm").and_then(|v| v.as_object()).unwrap_or(&serde_json::json!({}));
+                                    let algorithm = op_obj.get("algorithm").and_then(|v| v.as_object());
+                                    let empty_map = serde_json::Map::<String, serde_json::Value>::new();
+                                    let algorithm = algorithm.unwrap_or(&empty_map);
                                     let key_str = op_obj.get("key").and_then(|v| v.as_str()).unwrap_or("");
                                     let data_str = op_obj.get("data").and_then(|v| v.as_str()).unwrap_or("");
                                     let data_bytes = general_purpose::STANDARD.decode(data_str).unwrap_or_else(|_| data_str.as_bytes().to_vec());
@@ -2342,6 +2345,7 @@ impl WorkerRuntime for QuickJSRuntime {
                                                 let cipher = Aes256Gcm::new(key);
                                                 // Generate random nonce
                                                 let mut nonce_bytes = [0u8; 12];
+                                                use rand::RngCore;
                                                 rand::thread_rng().fill_bytes(&mut nonce_bytes);
                                                 let nonce = aes_gcm::Nonce::from_slice(&nonce_bytes);
                                                 match cipher.encrypt(nonce, data_bytes.as_ref()) {
@@ -2387,7 +2391,9 @@ impl WorkerRuntime for QuickJSRuntime {
                                     }
                                 }
                                 "decrypt" => {
-                                    let algorithm = op_obj.get("algorithm").and_then(|v| v.as_object()).unwrap_or(&serde_json::json!({}));
+                                    let algorithm = op_obj.get("algorithm").and_then(|v| v.as_object());
+                                    let empty_map = serde_json::Map::<String, serde_json::Value>::new();
+                                    let algorithm = algorithm.unwrap_or(&empty_map);
                                     let key_str = op_obj.get("key").and_then(|v| v.as_str()).unwrap_or("");
                                     let data_str = op_obj.get("data").and_then(|v| v.as_str()).unwrap_or("");
                                     let data_bytes = general_purpose::STANDARD.decode(data_str).unwrap_or_else(|_| Vec::new());
@@ -2437,7 +2443,9 @@ impl WorkerRuntime for QuickJSRuntime {
                                     }
                                 }
                                 "sign" => {
-                                    let algorithm = op_obj.get("algorithm").and_then(|v| v.as_object()).unwrap_or(&serde_json::json!({}));
+                                    let algorithm = op_obj.get("algorithm").and_then(|v| v.as_object());
+                                    let empty_map = serde_json::Map::<String, serde_json::Value>::new();
+                                    let algorithm = algorithm.unwrap_or(&empty_map);
                                     let key_str = op_obj.get("key").and_then(|v| v.as_str()).unwrap_or("");
                                     let data_str = op_obj.get("data").and_then(|v| v.as_str()).unwrap_or("");
                                     let data_bytes = general_purpose::STANDARD.decode(data_str).unwrap_or_else(|_| data_str.as_bytes().to_vec());
@@ -2452,7 +2460,7 @@ impl WorkerRuntime for QuickJSRuntime {
                                             match hash {
                                                 "SHA-256" => {
                                                     type HmacSha256 = Hmac<Sha256>;
-                                                    let mut mac = HmacSha256::new_from_slice(&key_bytes)
+                                                    let mut mac = <HmacSha256 as Mac>::new_from_slice(&key_bytes)
                                                         .map_err(|_| anyhow!("Invalid key"))?;
                                                     mac.update(&data_bytes);
                                                     let signature = mac.finalize().into_bytes();
@@ -2463,7 +2471,7 @@ impl WorkerRuntime for QuickJSRuntime {
                                                 }
                                                 "SHA-512" => {
                                                     type HmacSha512 = Hmac<Sha512>;
-                                                    let mut mac = HmacSha512::new_from_slice(&key_bytes)
+                                                    let mut mac = <HmacSha512 as Mac>::new_from_slice(&key_bytes)
                                                         .map_err(|_| anyhow!("Invalid key"))?;
                                                     mac.update(&data_bytes);
                                                     let signature = mac.finalize().into_bytes();
@@ -2479,7 +2487,9 @@ impl WorkerRuntime for QuickJSRuntime {
                                     }
                                 }
                                 "verify" => {
-                                    let algorithm = op_obj.get("algorithm").and_then(|v| v.as_object()).unwrap_or(&serde_json::json!({}));
+                                    let algorithm = op_obj.get("algorithm").and_then(|v| v.as_object());
+                                    let empty_map = serde_json::Map::<String, serde_json::Value>::new();
+                                    let algorithm = algorithm.unwrap_or(&empty_map);
                                     let key_str = op_obj.get("key").and_then(|v| v.as_str()).unwrap_or("");
                                     let signature_str = op_obj.get("signature").and_then(|v| v.as_str()).unwrap_or("");
                                     let data_str = op_obj.get("data").and_then(|v| v.as_str()).unwrap_or("");
@@ -2496,15 +2506,15 @@ impl WorkerRuntime for QuickJSRuntime {
                                             let valid = match hash {
                                                 "SHA-256" => {
                                                     type HmacSha256 = Hmac<Sha256>;
-                                                    let mut mac = HmacSha256::new_from_slice(&key_bytes)
-                                                        .map_err(|_| return Ok(()))?;
+                                                    let mut mac = <HmacSha256 as Mac>::new_from_slice(&key_bytes)
+                                                        .map_err(|_| anyhow!("Invalid key"))?;
                                                     mac.update(&data_bytes);
                                                     mac.verify_slice(&signature_bytes).is_ok()
                                                 }
                                                 "SHA-512" => {
                                                     type HmacSha512 = Hmac<Sha512>;
-                                                    let mut mac = HmacSha512::new_from_slice(&key_bytes)
-                                                        .map_err(|_| return Ok(()))?;
+                                                    let mut mac = <HmacSha512 as Mac>::new_from_slice(&key_bytes)
+                                                        .map_err(|_| anyhow!("Invalid key"))?;
                                                     mac.update(&data_bytes);
                                                     mac.verify_slice(&signature_bytes).is_ok()
                                                 }
