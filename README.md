@@ -12,12 +12,12 @@
 ║  ██║ ╚████║██║  ██║██║  ██║██║  ██║   ██║   ██║  ██║██║ ╚███║██║  ██║║
 ║  ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚══╝╚═╝  ╚═╝║
 ║                                                               ║
-║           ⚡ The Fastest Columnar Database ⚡                 ║
+║         High-Performance Columnar Database                  ║
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
 ```
 
-**A high-performance, production-ready columnar database with cognitive architecture, AI-powered optimization, and AGI underpinnings**
+**A computational database system integrating columnar storage, cognitive architecture, reinforcement learning optimization, and moral reasoning capabilities for AGI research and production applications**
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.91+-orange.svg)](https://www.rust-lang.org)
@@ -27,23 +27,24 @@
 
 ## Overview
 
-NarayanaDB is a revolutionary database system that combines high-performance columnar storage with cognitive architecture, AI-powered optimization, and moral reasoning capabilities. Built from the ground up in Rust, it's designed for real-time analytics, robotics control systems, distributed applications, and AGI research.
+NarayanaDB is a computational database system that integrates high-performance columnar storage with cognitive architecture, reinforcement learning optimization, and moral reasoning capabilities. Implemented in Rust, the system is designed for real-time analytics, robotics control systems, distributed applications, and artificial general intelligence (AGI) research.
 
-### Why NarayanaDB?
+### System Capabilities
 
-- **🚄 Blazing Fast**: Columnar storage with SIMD acceleration and GPU support
-- **🤖 AI-Powered**: Built-in reinforcement learning, cognitive query optimization, and LLM integration
-- **🧠 Cognitive Architecture**: Full Conscience Persistent Loop (CPL) implementation with consciousness, memory, and identity
-- **🔄 Distributed**: Quantum-inspired sync protocol for multi-node deployments
-- **🛡️ Production-Ready**: Comprehensive security, encryption, and self-healing
-- **🌐 Multi-API**: REST, GraphQL, gRPC, and WebSocket support
-- **🎯 Robot-Ready**: Low-latency operations perfect for robotics control
-- **⚖️ Moral Reasoning**: Optional Talking Cricket moral guide system
-- **🧬 Genetics System**: Evolutionary genetics and traits for cognitive agents
+- **High-Performance Storage**: Columnar storage architecture with SIMD acceleration and optional GPU support
+- **Cognitive Architecture**: Full implementation of Conscience Persistent Loop (CPL) with consciousness mechanisms, memory systems, and identity formation
+- **Reinforcement Learning**: Deep Q-Network (DQN) based query optimization and adaptive learning
+- **Distributed Systems**: Quantum-inspired synchronization protocol for multi-node deployments
+- **Security**: Comprehensive encryption, authentication, and self-healing mechanisms
+- **Multi-Protocol Support**: REST, GraphQL, gRPC, and WebSocket interfaces
+- **Webhooks System**: Comprehensive event-driven webhooks with granular scoping and retry logic
+- **Low-Latency Operations**: Sub-millisecond query response times suitable for robotics control
+- **Moral Reasoning**: Optional Talking Cricket system for ethical action assessment
+- **Genetics System**: Evolutionary genetics and trait computation for cognitive agents
 
 ---
 
-## ✨ Complete Feature List
+## Complete Feature List
 
 ### 1. Core Database Engine
 
@@ -376,9 +377,20 @@ NarayanaDB is a revolutionary database system that combines high-performance col
 - **Transform System**: Response transformation
 
 #### Webhooks
-- **Event Webhooks**: Database event notifications
-- **Configurable Endpoints**: Custom webhook URLs
-- **Retry Logic**: Automatic retry on failure
+
+NarayanaDB includes a comprehensive webhook system that was one of the foundational features, enabling real-time event notifications and integrations.
+
+- **Event Types**: Insert, Update, Delete, Create (table/database), Drop, Alter (schema), Query, Transaction, and Custom event types
+- **Granular Scoping**: Webhooks can be scoped to Global, Database, Table, Column, Row, or Record level
+- **Payload Formats**: JSON, TOML, or custom template-based payloads
+- **Configurable Endpoints**: Custom webhook URLs with HTTP/HTTPS support
+- **Retry Logic**: Automatic retry on failure with configurable retry counts
+- **Timeout Configuration**: Configurable request timeouts
+- **Security**: Optional webhook secrets for authentication
+- **Custom Headers**: Support for custom HTTP headers in webhook requests
+- **Event Filtering**: Fine-grained control over which events trigger webhooks
+- **Webhook Management**: Full CRUD API for creating, updating, and deleting webhooks
+- **Status Tracking**: Webhook execution status and history tracking
 
 #### Dynamic Features
 - **Dynamic Schema**: Schema evolution without migrations
@@ -430,7 +442,7 @@ NarayanaDB is a revolutionary database system that combines high-performance col
 
 ---
 
-## 🛠️ Installation
+## Installation
 
 ### Prerequisites
 
@@ -476,7 +488,7 @@ kubectl apply -f k8s/deployment.yaml
 
 ---
 
-## 📖 Usage
+## Usage
 
 ### REST API
 
@@ -722,11 +734,66 @@ let rag_response = llm_manager.rag()
     .await?;
 ```
 
+### Webhooks
+
+```bash
+# Create a webhook for table insert events
+curl -X POST http://localhost:8080/api/v1/webhooks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "user_insert_webhook",
+    "url": "https://api.example.com/webhooks/users",
+    "scope": {
+      "type": "Table",
+      "db_name": "main",
+      "table_name": "users"
+    },
+    "events": ["Insert"],
+    "format": "Json",
+    "retry_count": 3,
+    "timeout_seconds": 30,
+    "secret": "webhook_secret_key"
+  }'
+
+# Create a global webhook for all database events
+curl -X POST http://localhost:8080/api/v1/webhooks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "global_audit_webhook",
+    "url": "https://audit.example.com/events",
+    "scope": "Global",
+    "events": ["Insert", "Update", "Delete", "Create", "Drop"],
+    "format": "Json"
+  }'
+```
+
+```rust
+use narayana_storage::webhooks::{WebhookManager, WebhookConfig, WebhookScope, WebhookEventType, PayloadFormat};
+
+// Create webhook programmatically
+let webhook_config = WebhookConfig::new(
+    "user_events".to_string(),
+    "https://api.example.com/webhooks".to_string(),
+    WebhookScope::Table {
+        db_name: "main".to_string(),
+        table_name: "users".to_string(),
+    },
+    vec![
+        WebhookEventType::Insert,
+        WebhookEventType::Update,
+        WebhookEventType::Delete,
+    ],
+    PayloadFormat::Json,
+);
+
+webhook_manager.register_webhook(webhook_config).await?;
+```
+
 ---
 
-## 🤖 Robot Control Use Cases
+## Robotics and Real-Time Applications
 
-NarayanaDB is specifically designed to power real-time robotics systems:
+NarayanaDB is designed for real-time robotics systems and time-sensitive applications:
 
 ### Low-Latency Sensor Data Storage
 
@@ -766,7 +833,7 @@ Perfect for analyzing robot performance over time:
 
 ---
 
-## 🔧 Configuration
+## Configuration
 
 Configuration can be set via environment variables or config file:
 
@@ -802,7 +869,7 @@ cp config.example.toml config.toml
 
 ---
 
-## 📊 Performance & Benchmarks
+## Performance & Benchmarks
 
 NarayanaDB delivers exceptional performance across all operations. Below are comprehensive benchmark results from our test suite.
 
@@ -862,7 +929,7 @@ Optimal batch sizes for bulk operations:
 | **1,000** | 577,339,538 |
 | **10,000** | 560,577,394 |
 | **50,000** | 480,134,437 |
-| **100,000** | 944,250,505 ⭐ |
+| **100,000** | 944,250,505 (optimal) |
 | **500,000** | 780,843,717 |
 
 **Key Insights:**
@@ -911,13 +978,13 @@ Writes:
   Total: 30,000,000
   Successful: 30,000,000
   Duration: 227.69ms
-  Throughput: 131,758,815 ops/sec ⚡
+  Throughput: 131,758,815 ops/sec
 
 Reads:
   Total: 30,000,000
   Successful: 30,000,000
   Duration: 632.95ms
-  Throughput: 47,396,983 ops/sec ⚡
+  Throughput: 47,396,983 ops/sec
 ```
 
 **Key Insights:**
@@ -959,7 +1026,7 @@ cargo bench --bench brain_bench
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -1010,7 +1077,7 @@ cargo bench --bench brain_bench
 
 ---
 
-## 🧪 Testing
+## Testing
 
 ```bash
 # Run all tests
@@ -1028,7 +1095,7 @@ cargo bench
 
 ---
 
-## 📚 Documentation
+## Documentation
 
 - [Quick Start Guide](QUICK_START.md) - Get running in 30 seconds
 - [Production Status](PRODUCTION_STATUS.md) - Detailed feature status
@@ -1041,21 +1108,30 @@ cargo bench
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
 ---
 
-## 🙏 Acknowledgments
+## Contact
 
-Developed with ❤️ by Carlos Barbosa and contributors.
+**Primary Maintainer**: Carlos Barbosa  
+**Email**: carlosbarbosamexico@gmail.com
+
+For questions, collaboration opportunities, or research inquiries, please reach out via email or open an issue on GitHub.
+
+---
+
+## Acknowledgments
+
+Developed by Carlos Barbosa and contributors.
 
 Special thanks to:
 - The Rust community for amazing tools and libraries
@@ -1066,7 +1142,7 @@ Special thanks to:
 
 ---
 
-## 🔗 Links
+## Links
 
 - [Website](https://narayanadb.com)
 - [Documentation](https://docs.narayanadb.com)
@@ -1075,7 +1151,7 @@ Special thanks to:
 
 ---
 
-## 🎯 Roadmap
+## Roadmap
 
 - [ ] Horizontal query parallelization
 - [ ] Multi-region replication
@@ -1088,12 +1164,105 @@ Special thanks to:
 
 ---
 
+## Research Foundations
+
+NarayanaDB implements theoretical frameworks from cognitive science, neuroscience, AI alignment research, and distributed systems theory. The following references provide the academic foundation for the system's design.
+
+### Cognitive Architecture (CPL)
+
+- Baars, B. J. (1988). *A Cognitive Theory of Consciousness*. Cambridge University Press.
+- Baddeley, A. (2000). The episodic buffer: a new component of working memory? *Trends in Cognitive Sciences*, 4(11), 417-423.
+- Miller, G. A. (1956). The magical number seven, plus or minus two: some limits on our capacity for processing information. *Psychological Review*, 63(2), 81-97.
+- McClelland, J. L., McNaughton, B. L., & O'Reilly, R. C. (1995). Why there are complementary learning systems in the hippocampus and neocortex: insights from the successes and failures of connectionist models of learning and memory. *Psychological Review*, 102(3), 419-457.
+- Conway, M. A., & Pleydell-Pearce, C. W. (2000). The construction of autobiographical memories in the self-memory system. *Psychological Review*, 107(2), 261-288.
+- McAdams, D. P. (2001). The psychology of life stories. *Review of General Psychology*, 5(2), 100-122.
+- Posner, M. I., & Petersen, S. E. (1990). The attention system of the human brain. *Annual Review of Neuroscience*, 13(1), 25-42.
+- O'Neill, J., Pleydell-Bouverie, B., Dupret, D., & Csicsvari, J. (2010). Play it again: reactivation of waking experience and memory. *Trends in Neurosciences*, 33(5), 220-229.
+
+### Reinforcement Learning
+
+- Mnih, V., et al. (2015). Human-level control through deep reinforcement learning. *Nature*, 518(7540), 529-533.
+
+### Moral Reasoning and Value Alignment
+
+- Tennant, Hailes & Musolesi (2023). "Hybrid Approaches for Moral Value Alignment in AI Agents: a Manifesto"
+- Ravindran (2023). "Moral Anchor System: A Predictive Framework for AI Value Alignment and Drift Prevention"
+- Dognin, Rios, Luss, et al. (2023). "Contextual Moral Value Alignment Through Context-Based Aggregation"
+- Kim, Donaldson & Hooker (2023). "Grounding Value Alignment with Ethical Principles"
+- Gabriel, I. (2020). "Artificial Intelligence, Values, and Alignment"
+- Hauser, M. (2006). *Moral Minds: How Nature Designed Our Universal Sense of Right and Wrong*
+- Kneer & Viehoff (2023). "The Hard Problem of AI Alignment: Value Forks in Moral Judgment"
+- Birch, J. (2022). *The Edge of Sentience*
+
+### Embodied Cognition and World Interaction
+
+- Varela, F. J., Thompson, E., & Rosch, E. (1991). *The Embodied Mind*
+- Friston, K. (2010). The free-energy principle: a unified brain theory?
+- Desimone, R., & Duncan, J. (1995). Neural mechanisms of selective visual attention
+
+### Genetics and Evolutionary Systems
+
+- Hartl, D. L., & Clark, A. G. (2007). *Principles of Population Genetics*
+- Eiben, A. E., & Smith, J. E. (2015). *Introduction to Evolutionary Computing*
+- Falconer, D. S., & Mackay, T. F. C. (1996). *Introduction to Quantitative Genetics*
+- Plomin, R., DeFries, J. C., Knopik, V. S., & Neiderhiser, J. M. (2013). *Behavioral Genetics*
+
+### Distributed Systems
+
+- Lamport, L. (1998). The part-time parliament. *ACM Transactions on Computer Systems*, 16(2), 133-169.
+- Shapiro, M., Preguiça, N., Baquero, C., & Zawirski, M. (2011). Conflict-free replicated data types. *Proceedings of the 13th International Symposium on Stabilization, Safety, and Security of Distributed Systems*
+
+---
+
+## Call to Action
+
+NarayanaDB represents a novel integration of database systems, cognitive architecture, and AGI research. We invite researchers, engineers, and practitioners to:
+
+**For Researchers:**
+- Explore the cognitive architecture implementation and contribute theoretical insights
+- Investigate the integration of consciousness models with database systems
+- Study moral reasoning systems in artificial agents
+- Examine the genetics and traits system for cognitive agent design
+
+**For Engineers:**
+- Deploy NarayanaDB in production environments requiring high-performance analytics
+- Integrate cognitive capabilities into robotics and autonomous systems
+- Contribute to the codebase with performance optimizations and feature implementations
+- Build applications leveraging the cognitive architecture for decision-making systems
+
+**For Practitioners:**
+- Use NarayanaDB for real-time analytics and time-series data
+- Implement robotics control systems with cognitive decision-making
+- Develop AGI research platforms with persistent cognitive state
+- Create applications requiring ethical reasoning and moral constraints
+
+**Getting Started:**
+1. Review the [Quick Start Guide](QUICK_START.md) for immediate deployment
+2. Study the [CPL Theoretical Foundations](docs/cpl-theoretical-foundations.md) for cognitive architecture understanding
+3. Examine the [Talking Cricket Whitepaper](docs/talking-cricket-whitepaper.md) for moral reasoning implementation
+4. Contribute code, documentation, or research insights via pull requests
+5. Join discussions on cognitive architecture, AGI development, and database systems
+
+**Research Collaboration:**
+We welcome collaboration with academic institutions, research laboratories, and industry partners working on:
+- Cognitive architecture and consciousness modeling
+- AI value alignment and safety
+- Robotics and autonomous systems
+- Distributed systems and consensus algorithms
+- Database systems and query optimization
+
+For research inquiries, collaboration opportunities, or technical questions, please contact:
+
+**Email**: carlosbarbosamexico@gmail.com
+
+Alternatively, open an issue on GitHub for public discussions.
+
+---
+
 <div align="center">
 
-**⭐ Star us on GitHub if you find NarayanaDB useful! ⭐**
+**NarayanaDB: Bridging Database Systems and Cognitive Architecture**
 
-Made with 🦀 Rust and 🐕 Pug Power
-
-**The Future of Cognitive Databases**
+Built with Rust. Designed for AGI research and production applications.
 
 </div>
