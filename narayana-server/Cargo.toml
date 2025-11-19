@@ -1,0 +1,55 @@
+[package]
+name = "narayana-server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "narayana-server"
+path = "src/main.rs"
+
+[dependencies]
+regex = "1.10"
+narayana-core = { path = "../narayana-core" }
+narayana-storage = { path = "../narayana-storage" }
+narayana-query = { path = "../narayana-query" }
+narayana-api = { path = "../narayana-api" }
+narayana-llm = { path = "../narayana-llm" }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+axum = { workspace = true }
+# axum-server = "0.6"  # Commented out due to compatibility issues - can be enabled when needed
+tower = { workspace = true }
+tower-http = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tonic = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+config = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }
+metrics = { workspace = true }
+metrics-prometheus = { workspace = true }
+jsonwebtoken = "9.2"
+rustls = "0.21"
+rustls-pemfile = "1.0"
+aes-gcm = "0.10"
+pbkdf2 = { workspace = true }
+sha2 = { workspace = true }
+hmac = { workspace = true }
+reqwest = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
+urlencoding = "2.1"
+tempfile = "3.8"
+rand = "0.8"
+hex = "0.4"
+parking_lot = { workspace = true }
+futures = "0.3"
+futures-util = "0.3"
+crossbeam = { workspace = true }
+axum-extra = { version = "0.4" }
+tokio-tungstenite = "0.24"
+toml = "0.8"
+

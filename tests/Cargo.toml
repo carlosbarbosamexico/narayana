@@ -1,0 +1,292 @@
+[package]
+name = "narayana-tests"
+version = "0.1.0"
+edition = "2021"
+
+[[test]]
+name = "integration_test"
+path = "integration_test.rs"
+
+[[test]]
+name = "api_tests"
+path = "api_tests.rs"
+
+[[test]]
+name = "property_tests"
+path = "property_tests.rs"
+
+[[test]]
+name = "server_tests"
+path = "server_tests.rs"
+
+[[test]]
+name = "edge_cases"
+path = "edge_cases.rs"
+
+[[test]]
+name = "comprehensive_edge_cases"
+path = "comprehensive_edge_cases.rs"
+
+[[test]]
+name = "error_handling"
+path = "error_handling.rs"
+
+[[test]]
+name = "concurrency_tests"
+path = "concurrency_tests.rs"
+
+[[test]]
+name = "stress_tests"
+path = "stress_tests.rs"
+
+[[test]]
+name = "data_type_tests"
+path = "data_type_tests.rs"
+
+[[test]]
+name = "weird_edge_cases"
+path = "weird_edge_cases.rs"
+
+[[test]]
+name = "security_tests"
+path = "security_tests.rs"
+
+[[test]]
+name = "obscure_bugs"
+path = "obscure_bugs.rs"
+
+[[test]]
+name = "bug_prevention"
+path = "bug_prevention.rs"
+
+[[test]]
+name = "query_execution_tests"
+path = "query_execution_tests.rs"
+
+[[test]]
+name = "block_operations_tests"
+path = "block_operations_tests.rs"
+
+[[test]]
+name = "api_endpoint_tests"
+path = "api_endpoint_tests.rs"
+
+[[test]]
+name = "type_conversion_tests"
+path = "type_conversion_tests.rs"
+
+[[test]]
+name = "schema_validation_tests"
+path = "schema_validation_tests.rs"
+
+[[test]]
+name = "error_propagation_tests"
+path = "error_propagation_tests.rs"
+
+[[test]]
+name = "binary_data_tests"
+path = "binary_data_tests.rs"
+
+[[test]]
+name = "timestamp_date_tests"
+path = "timestamp_date_tests.rs"
+
+[[test]]
+name = "quantum_sync_tests"
+path = "quantum_sync_tests.rs"
+
+[[test]]
+name = "consensus_tests"
+path = "consensus_tests.rs"
+
+[[test]]
+name = "columnar_format_tests"
+path = "columnar_format_tests.rs"
+
+[[test]]
+name = "database_manager_tests"
+path = "database_manager_tests.rs"
+
+[[test]]
+name = "advanced_indexing_tests"
+path = "advanced_indexing_tests.rs"
+
+[[test]]
+name = "ai_optimized_tests"
+path = "ai_optimized_tests.rs"
+
+[[test]]
+name = "vector_search_tests"
+path = "vector_search_tests.rs"
+
+[[test]]
+name = "small_writes_tests"
+path = "small_writes_tests.rs"
+
+[[test]]
+name = "advanced_joins_tests"
+path = "advanced_joins_tests.rs"
+
+[[test]]
+name = "auto_increment_tests"
+path = "auto_increment_tests.rs"
+
+[[test]]
+name = "mutable_data_tests"
+path = "mutable_data_tests.rs"
+
+[[test]]
+name = "json_support_tests"
+path = "json_support_tests.rs"
+
+[[test]]
+name = "ml_integration_tests"
+path = "ml_integration_tests.rs"
+
+[[test]]
+name = "advanced_optimizer_tests"
+path = "advanced_optimizer_tests.rs"
+
+[[test]]
+name = "materialized_views_tests"
+path = "materialized_views_tests.rs"
+
+[[test]]
+name = "advanced_analytics_tests"
+path = "advanced_analytics_tests.rs"
+
+[[test]]
+name = "ai_analytics_tests"
+path = "ai_analytics_tests.rs"
+
+[[test]]
+name = "powerful_api_tests"
+path = "powerful_api_tests.rs"
+
+[[test]]
+name = "webhooks_tests"
+path = "webhooks_tests.rs"
+
+[[test]]
+name = "websocket_tests"
+path = "websocket_tests.rs"
+
+[[test]]
+name = "network_sync_tests"
+path = "network_sync_tests.rs"
+
+[[test]]
+name = "true_columnar_tests"
+path = "true_columnar_tests.rs"
+
+[[test]]
+name = "encryption_tests"
+path = "encryption_tests.rs"
+
+[[test]]
+name = "key_management_tests"
+path = "key_management_tests.rs"
+
+[[test]]
+name = "performance_tests"
+path = "performance_tests.rs"
+
+[[test]]
+name = "sharding_tests"
+path = "sharding_tests.rs"
+
+[[test]]
+name = "transaction_engine_tests"
+path = "transaction_engine_tests.rs"
+
+[[test]]
+name = "elegant_api_tests"
+path = "elegant_api_tests.rs"
+
+[[test]]
+name = "websocket_api_tests"
+path = "websocket_api_tests.rs"
+
+[[test]]
+name = "hot_path_tests"
+path = "hot_path_tests.rs"
+
+[[test]]
+name = "self_healing_tests"
+path = "self_healing_tests.rs"
+
+
+[[test]]
+name = "comprehensive_tests"
+path = "comprehensive_tests.rs"
+
+[[test]]
+name = "coverage_tests"
+path = "coverage_tests.rs"
+
+[[test]]
+name = "query_learning_tests"
+path = "query_learning_tests.rs"
+
+[[test]]
+name = "workers_tests"
+path = "workers_tests.rs"
+
+[[test]]
+name = "launch_kill_test"
+path = "launch_kill_test.rs"
+
+[[test]]
+name = "threading_tests"
+path = "threading_tests.rs"
+
+[[test]]
+name = "placeholder_implementation_tests"
+path = "placeholder_implementation_tests.rs"
+
+[[test]]
+name = "comprehensive_placeholder_tests"
+path = "comprehensive_placeholder_tests.rs"
+
+[[test]]
+name = "transform_filter_tests"
+path = "transform_filter_tests.rs"
+
+[[test]]
+name = "auth_api_tests"
+path = "auth_api_tests.rs"
+
+[[test]]
+name = "security_exploit_tests"
+path = "security_exploit_tests.rs"
+
+[[bench]]
+name = "benchmark_tests"
+path = "benchmark_tests.rs"
+harness = false
+
+[dependencies]
+narayana-core = { path = "../narayana-core" }
+narayana-storage = { path = "../narayana-storage" }
+narayana-query = { path = "../narayana-query" }
+narayana-api = { path = "../narayana-api" }
+narayana-server = { path = "../narayana-server" }
+tokio = { version = "1.35", features = ["full"] }
+proptest = "1.4"
+criterion = "0.5"
+reqwest = { version = "0.11", features = ["json", "blocking"] }
+serde_json = "1.0"
+bytes = "1.5"
+futures = "0.3"
+uuid = { version = "1.0", features = ["v4"] }
+tempfile = "3.8"
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+serde = { workspace = true }
+async-trait = "0.1"
+anyhow = "1.0"
+
+[[test]]
+name = "cognitive_integration_test"
+path = "cognitive_integration_test.rs"

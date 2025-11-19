@@ -1,0 +1,60 @@
+# NarayanaDB Seed Data
+# This file contains initial data to populate tables after schema creation
+# Format: TOML (Narayana YAML Notation - .nyn extension)
+
+# Seed data for users table
+[[seeds.users]]
+id = "user-001"
+username = "admin"
+email = "admin@example.com"
+created_at = 1700000000
+
+[[seeds.users]]
+id = "user-002"
+username = "alice"
+email = "alice@example.com"
+created_at = 1700000100
+
+[[seeds.users]]
+id = "user-003"
+username = "bob"
+email = "bob@example.com"
+created_at = 1700000200
+
+# Seed data for posts table
+[[seeds.posts]]
+id = "post-001"
+user_id = "user-001"
+title = "Welcome to NarayanaDB"
+content = "This is the first post in our database."
+created_at = 1700000300
+
+[[seeds.posts]]
+id = "post-002"
+user_id = "user-002"
+title = "Getting Started"
+content = "Here's how to get started with NarayanaDB."
+created_at = 1700000400
+
+# Seed data for products table
+[[seeds.products]]
+id = "prod-001"
+name = "Laptop"
+price = 1299.99
+stock = 50
+active = true
+
+[[seeds.products]]
+id = "prod-002"
+name = "Mouse"
+price = 29.99
+stock = 200
+active = true
+
+[[seeds.products]]
+id = "prod-003"
+name = "Keyboard"
+price = 79.99
+stock = 100
+active = true
+

@@ -1,0 +1,50 @@
+# NarayanaDB Schema Definition
+# This file defines the database schema - tables and their fields
+# Format: TOML (Narayana YAML Notation - .nyn extension)
+
+# Default database
+[database.default]
+
+# Example: Users table
+[table.users]
+fields = [
+    { name = "id", data_type = "String", nullable = false },
+    { name = "username", data_type = "String", nullable = false },
+    { name = "email", data_type = "String", nullable = false },
+    { name = "created_at", data_type = "Int64", nullable = false },
+]
+
+# Example: Posts table
+[table.posts]
+fields = [
+    { name = "id", data_type = "String", nullable = false },
+    { name = "user_id", data_type = "String", nullable = false },
+    { name = "title", data_type = "String", nullable = false },
+    { name = "content", data_type = "String", nullable = true },
+    { name = "created_at", data_type = "Int64", nullable = false },
+]
+
+# Example: Products table
+[table.products]
+fields = [
+    { name = "id", data_type = "String", nullable = false },
+    { name = "name", data_type = "String", nullable = false },
+    { name = "price", data_type = "Float64", nullable = false },
+    { name = "stock", data_type = "Int64", nullable = false, default_value = 0 },
+    { name = "active", data_type = "Boolean", nullable = false, default_value = true },
+]
+
+# Available data types:
+# - Int8, Int16, Int32, Int64
+# - UInt8, UInt16, UInt32, UInt64
+# - Float32, Float64
+# - Boolean
+# - String
+# - Binary
+# - Timestamp
+# - Date
+# - Json
+# - Nullable(DataType) - e.g., "Nullable(String)"
+# - Array(DataType) - e.g., "Array(String)"
+# - Map(KeyType, ValueType) - e.g., "Map(String, Int64)"
+

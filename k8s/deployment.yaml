@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: narayana
+  labels:
+    app: narayana
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: narayana
+  template:
+    metadata:
+      labels:
+        app: narayana
+    spec:
+      containers:
+      - name: narayana
+        image: narayana:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: RUST_LOG
+          value: "info"
+        - name: NARAYANA_DATA_DIR
+          value: "/data"
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: narayana
+spec:
+  selector:
+    app: narayana
+  ports:
+  - port: 8080
+    targetPort: 8080
+  type: LoadBalancer
+

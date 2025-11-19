@@ -1,0 +1,76 @@
+[package]
+name = "narayana-storage"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+narayana-core = { path = "../narayana-core" }
+narayana-llm = { path = "../narayana-llm", optional = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = { workspace = true }
+# arrow = { workspace = true, optional = true }
+rocksdb = { workspace = true }
+sled = { workspace = true }
+lz4 = { workspace = true }
+regex = "1.10"
+zstd = { workspace = true }
+snap = { workspace = true }
+bytes = { workspace = true }
+parking_lot = { workspace = true }
+dashmap = { workspace = true }
+crossbeam = { workspace = true }
+rayon = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+ahash = { workspace = true }
+aes-gcm = "0.10"
+chacha20poly1305 = "0.10"
+aes = "0.8"
+cbc = "0.1"
+rand = "0.8"
+reqwest = { workspace = true }
+toml = { workspace = true }
+hex = "0.4"
+hmac = { workspace = true }
+sha2 = { workspace = true }
+uuid = { workspace = true }
+num_cpus = { workspace = true }
+pbkdf2 = { workspace = true }
+argon2 = { workspace = true }
+scrypt = { workspace = true }
+memmap2 = "0.9"
+urlencoding = "2.1"
+rquickjs = "0.1"
+num-complex = "0.4"
+ndarray = "0.15"
+base64 = "0.21"
+
+# GPU backends (real GPU libraries - add these if you need GPU support)
+# To enable Metal on macOS: uncomment and add --features metal
+# metal = { version = "0.27", optional = true }
+# To enable Vulkan: uncomment and add --features vulkan  
+# wgpu = { version = "20", optional = true }
+# pollster = { version = "0.3", optional = true }
+# bytemuck = { version = "1.14", optional = true }
+
+[features]
+default = []
+# Enable cognitive/ML features (thought processing, reinforcement learning, etc.)
+cognitive = []
+# Enable LLM integration
+llm = ["dep:narayana-llm"]
+# GPU backends
+# metal = ["dep:metal"]
+# vulkan = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
+# gpu = ["metal", "vulkan"]
+
+[dev-dependencies]
+criterion = { workspace = true }
+proptest = { workspace = true }
+

@@ -1,0 +1,23 @@
+[package]
+name = "narayana-llm"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+narayana-core = { path = "../narayana-core" }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+parking_lot = { workspace = true }
+lru = { workspace = true }
+    uuid = { workspace = true }
+    bytes = { workspace = true }
+    urlencoding = "2.1"
+

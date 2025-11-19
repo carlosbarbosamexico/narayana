@@ -1,0 +1,38 @@
+# Rust
+target/
+**/*.rs.bk
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+.cursor/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database files
+*.db
+*.sst
+*.log
+data/
+wal/
+
+# Build artifacts
+dist/
+build/
+
+# Test coverage
+coverage/
+*.profdata
+
+# Logs
+*.log
+
+# Development documentation (archived)
+dev-docs/
+

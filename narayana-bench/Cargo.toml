@@ -1,0 +1,26 @@
+[package]
+name = "narayana-bench"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "narayana-bench"
+path = "src/main.rs"
+
+[dependencies]
+narayana-core = { path = "../narayana-core" }
+narayana-storage = { path = "../narayana-storage" }
+narayana-query = { path = "../narayana-query" }
+criterion = { workspace = true }
+tokio = { workspace = true }
+rayon = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+rand = "0.8"
+serde = { workspace = true }
+clap = { workspace = true }
+

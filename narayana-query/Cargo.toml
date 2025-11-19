@@ -1,0 +1,27 @@
+[package]
+name = "narayana-query"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+narayana-core = { path = "../narayana-core" }
+narayana-storage = { path = "../narayana-storage" }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# arrow = { workspace = true, optional = true }
+rayon = { workspace = true }
+parking_lot = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+dashmap = { workspace = true }
+crossbeam = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+proptest = { workspace = true }
+

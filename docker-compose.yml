@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  narayana:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - RUST_LOG=info
+      - NARAYANA_DATA_DIR=/data
+    volumes:
+      - narayana-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  narayana-data:
+

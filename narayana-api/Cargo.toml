@@ -1,0 +1,29 @@
+[package]
+name = "narayana-api"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+narayana-core = { path = "../narayana-core" }
+narayana-query = { path = "../narayana-query" }
+narayana-storage = { path = "../narayana-storage" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true }
+tonic = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+futures = "0.3"
+reqwest = { workspace = true }
+async-trait = { workspace = true }
+async-graphql = "6.0"
+async-graphql-value = "6.0"
+base64 = "0.13"
+unicode-segmentation = "1.10"
+indexmap = "2.0"
+parking_lot = { workspace = true }
+
