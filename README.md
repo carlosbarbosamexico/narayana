@@ -1,4 +1,4 @@
-# NarayanaDB - The Next-Generation Columnar Database
+# NarayanaDB - The AGI Foundational Database
 
 <div align="center">
 
