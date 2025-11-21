@@ -1,0 +1,51 @@
+[package]
+name = "narayana-me"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+narayana-core = { path = "../narayana-core" }
+narayana-wld = { path = "../narayana-wld" }
+narayana-storage = { path = "../narayana-storage" }
+narayana-llm = { path = "../narayana-llm", optional = true }
+narayana-eye = { path = "../narayana-eye", optional = true }
+narayana-sc = { path = "../narayana-sc", optional = true }
+narayana-spk = { path = "../narayana-spk", optional = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+parking_lot = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+bytes = { workspace = true }
+chrono = { workspace = true }
+reqwest = { workspace = true }
+tokio-tungstenite = { version = "0.23", features = ["native-tls"] }
+futures-util = "0.3"
+axum = { workspace = true, features = ["ws"] }
+url = "2.5"
+percent-encoding = "2.3"
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+[dev-dependencies]
+tokio-test = { workspace = true }
+
+[features]
+default = []
+beyond-presence = []  # Beyond Presence Genesis provider
+llm = ["narayana-llm"]  # LLM integration for avatar responses
+vision = ["narayana-eye"]  # Vision capabilities
+audio-input = ["narayana-sc"]  # Audio input capabilities
+tts = ["narayana-spk"]  # Text-to-speech capabilities
+multimodal = ["vision", "audio-input", "tts"]  # All multimodal capabilities
+full = ["llm", "multimodal", "beyond-presence"]  # All features enabled
+
+[[example]]
+name = "basic_avatar"
+path = "examples/basic_avatar.rs"
+

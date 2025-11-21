@@ -4,6 +4,7 @@ use narayana_api::websocket::{ConnectionId, WsMessage};
 use crate::websocket_manager::WebSocketManager;
 use crate::websocket_bridge::WebSocketBridge;
 use crate::security::TokenManager;
+use narayana_storage::{ColumnStore, database_manager::DatabaseManager};
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -24,12 +25,14 @@ pub struct WebSocketState {
     pub manager: Arc<WebSocketManager>,
     pub bridge: Arc<WebSocketBridge>,
     pub token_manager: Arc<TokenManager>,
+    pub storage: Arc<dyn ColumnStore>,
+    pub db_manager: Arc<DatabaseManager>,
 }
 
 /// Query parameters for WebSocket connection
 #[derive(Deserialize)]
 pub struct WsQueryParams {
-    token: Option<String>,
+    pub token: Option<String>,
 }
 
 /// WebSocket upgrade handler
@@ -56,7 +59,7 @@ pub async fn websocket_handler(
 }
 
 /// Handle WebSocket connection
-async fn handle_socket(
+pub(crate) async fn handle_socket(
     socket: WebSocket,
     state: Arc<WebSocketState>,
     user_id: Option<String>,
@@ -103,11 +106,13 @@ async fn handle_socket(
     // Handle incoming messages from client
     let connection_id_clone2 = connection_id.clone();
     let manager_clone2 = state.manager.clone();
+    let storage_clone = state.storage.clone();
+    let db_manager_clone = state.db_manager.clone();
     let recv_task = tokio::spawn(async move {
         while let Some(msg) = receiver.next().await {
             match msg {
                 Ok(Message::Text(text)) => {
-                    if let Err(e) = handle_message(&text, &connection_id_clone2, &manager_clone2).await {
+                    if let Err(e) = handle_message(&text, &connection_id_clone2, &manager_clone2, storage_clone.clone(), db_manager_clone.clone()).await {
                         error!("Error handling message from {}: {}", connection_id_clone2, e);
                     }
                 }
@@ -154,6 +159,8 @@ async fn handle_message(
     text: &str,
     connection_id: &ConnectionId,
     manager: &Arc<WebSocketManager>,
+    storage: Arc<dyn ColumnStore>,
+    db_manager: Arc<DatabaseManager>,
 ) -> Result<(), String> {
     // Update activity timestamp
     manager.update_activity(connection_id);
@@ -213,9 +220,43 @@ async fn handle_message(
             }
         }
         WsMessage::Query { query, params } => {
-            warn!("Query messages not yet implemented for WebSocket connection {}", connection_id);
-            let error_msg = WsMessage::error("not_implemented", "Query messages are not yet supported");
-            manager.send_to_connection(connection_id, error_msg);
+            debug!("Executing query from connection {}: {}", connection_id, query);
+            
+            // Parse query - for now, support simple table queries
+            // Format: "table:<table_id>" or "table_name:<name>" or SQL-like queries
+            let query_result = if query.starts_with("table:") {
+                // Simple table query: table:<table_id>
+                let table_id_str = query.trim_start_matches("table:");
+                if let Ok(table_id) = table_id_str.parse::<u64>() {
+                    execute_table_query(table_id, params, storage, db_manager).await
+                } else {
+                    Err(format!("Invalid table ID: {}", table_id_str))
+                }
+            } else if query.starts_with("table_name:") {
+                // Query by table name
+                let table_name = query.trim_start_matches("table_name:");
+                execute_table_query_by_name(table_name, params, storage, db_manager).await
+            } else {
+                // For now, treat as table name
+                execute_table_query_by_name(&query, params, storage, db_manager).await
+            };
+
+            match query_result {
+                Ok(result) => {
+                    let result_msg = WsMessage::QueryResult {
+                        result: serde_json::json!(result),
+                        query_id: None,
+                    };
+                    if !manager.send_to_connection(connection_id, result_msg) {
+                        warn!("Failed to send query result to {}", connection_id);
+                    }
+                }
+                Err(e) => {
+                    error!("Query execution failed for connection {}: {}", connection_id, e);
+                    let error_msg = WsMessage::error("query_error", &format!("Query execution failed: {}", e));
+                    manager.send_to_connection(connection_id, error_msg);
+                }
+            }
         }
         _ => {
             warn!("Unexpected message type from connection {}: {:?}", connection_id, message);
@@ -225,4 +266,92 @@ async fn handle_message(
     }
 
     Ok(())
+}
+
+/// Execute a table query by table ID
+async fn execute_table_query(
+    table_id: u64,
+    params: Option<serde_json::Value>,
+    storage: Arc<dyn ColumnStore>,
+    db_manager: Arc<DatabaseManager>,
+) -> Result<serde_json::Value, String> {
+    use narayana_core::types::TableId;
+    
+    let table_id = TableId(table_id);
+    
+    // Parse params for limit, offset, columns
+    let limit = params
+        .as_ref()
+        .and_then(|p| p.get("limit"))
+        .and_then(|l| l.as_u64())
+        .map(|l| l as usize)
+        .unwrap_or(1000)
+        .min(10000); // Max 10k rows
+    
+    let offset = params
+        .as_ref()
+        .and_then(|p| p.get("offset"))
+        .and_then(|o| o.as_u64())
+        .map(|o| o as usize)
+        .unwrap_or(0);
+    
+    // Get column indices from params or default to all
+    let column_indices: Vec<u32> = if let Some(cols_param) = params.as_ref().and_then(|p| p.get("columns")).and_then(|c| c.as_array()) {
+        // Use provided column indices
+        cols_param
+            .iter()
+            .filter_map(|v| v.as_u64().map(|i| i as u32))
+            .collect()
+    } else {
+        // Default to all columns - get schema first
+        match storage.get_schema(table_id).await {
+            Ok(schema) => (0..schema.fields.len() as u32).collect(),
+            Err(_) => vec![0, 1], // Fallback to first two columns
+        }
+    };
+    
+    // Read columns from storage
+    match storage.read_columns(table_id, column_indices.clone(), offset, limit).await {
+        Ok(columns) => {
+            let row_count = columns.first().map(|c| c.len()).unwrap_or(0);
+            
+            // Convert columns to JSON
+            let json_columns: Vec<serde_json::Value> = columns
+                .iter()
+                .filter_map(|col| serde_json::to_value(col).ok())
+                .collect();
+            
+            Ok(serde_json::json!({
+                "columns": json_columns,
+                "row_count": row_count,
+                "table_id": table_id.0,
+            }))
+        }
+        Err(e) => Err(format!("Failed to query table: {}", e))
+    }
+}
+
+/// Execute a table query by table name
+async fn execute_table_query_by_name(
+    table_name: &str,
+    params: Option<serde_json::Value>,
+    storage: Arc<dyn ColumnStore>,
+    db_manager: Arc<DatabaseManager>,
+) -> Result<serde_json::Value, String> {
+    use narayana_core::types::TableId;
+    
+    // Find table ID by name - iterate through all databases and their tables
+    let databases = db_manager.list_databases();
+    let mut table_id = None;
+    for db in databases {
+        if let Ok(tables) = db_manager.list_tables(db.id) {
+            if let Some(found) = tables.iter().find(|t| t.name == table_name) {
+                table_id = Some(found.table_id);
+                break;
+            }
+        }
+    }
+    let table_id = table_id.ok_or_else(|| format!("Table '{}' not found", table_name))?;
+    
+    execute_table_query(table_id.0, params, storage, db_manager).await
 }

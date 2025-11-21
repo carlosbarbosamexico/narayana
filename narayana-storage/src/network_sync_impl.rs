@@ -230,7 +230,7 @@ impl NetworkSyncTransport {
         let message = SyncMessage::StateVector { states };
         
         if let Some(ref stream) = client.stream {
-            Self::send_message_to_stream(stream, &message).await;
+            let _ = Self::send_message_to_stream(stream, &message).await;
         }
         
         Ok(())

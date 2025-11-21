@@ -41,3 +41,5 @@ If environment variables are not set, the default credentials are:
 - ✅ Automatic redirect to login if not authenticated
 - ✅ Automatic redirect to dashboard if already authenticated
 
+
+

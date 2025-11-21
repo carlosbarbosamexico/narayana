@@ -63,9 +63,14 @@ impl CPLManager {
     
     /// Start a CPL instance
     pub async fn start_cpl(&self, cpl_id: &str) -> Result<()> {
-        let cpls = self.cpls.read();
-        if let Some(cpl) = cpls.get(cpl_id) {
-            cpl.clone().start().await
+        // Clone the Arc before dropping the lock to avoid holding lock across await
+        let cpl = {
+            let cpls = self.cpls.read();
+            cpls.get(cpl_id).cloned()
+        };
+        
+        if let Some(cpl) = cpl {
+            cpl.start().await
         } else {
             Err(Error::Storage(format!("CPL {} not found", cpl_id)))
         }
@@ -73,8 +78,13 @@ impl CPLManager {
     
     /// Stop a CPL instance
     pub async fn stop_cpl(&self, cpl_id: &str) -> Result<()> {
-        let cpls = self.cpls.read();
-        if let Some(cpl) = cpls.get(cpl_id) {
+        // Clone the Arc before dropping the lock to avoid holding lock across await
+        let cpl = {
+            let cpls = self.cpls.read();
+            cpls.get(cpl_id).cloned()
+        };
+        
+        if let Some(cpl) = cpl {
             cpl.stop().await
         } else {
             Err(Error::Storage(format!("CPL {} not found", cpl_id)))
@@ -83,21 +93,30 @@ impl CPLManager {
     
     /// Remove a CPL instance
     pub async fn remove_cpl(&self, cpl_id: &str) -> Result<()> {
-        let mut cpls = self.cpls.write();
+        // Clone the Arc before dropping the lock to avoid holding lock across await
+        let (cpl, was_running) = {
+            let cpls = self.cpls.read();
+            if let Some(cpl) = cpls.get(cpl_id) {
+                (cpl.clone(), cpl.is_running())
+            } else {
+                return Err(Error::Storage(format!("CPL {} not found", cpl_id)));
+            }
+        };
         
-        if let Some(cpl) = cpls.get(cpl_id) {
-            // Stop before removing
-            if cpl.is_running() {
-                if let Err(e) = cpl.stop().await {
-                    warn!("Failed to stop CPL before removal: {}", e);
-                }
+        // Stop before removing (if running)
+        if was_running {
+            if let Err(e) = cpl.stop().await {
+                warn!("Failed to stop CPL before removal: {}", e);
             }
         }
         
+        // Now remove from the map
+        let mut cpls = self.cpls.write();
         if cpls.remove(cpl_id).is_some() {
             info!("Removed CPL {}", cpl_id);
             Ok(())
         } else {
+            // This shouldn't happen since we checked above, but handle it anyway
             Err(Error::Storage(format!("CPL {} not found", cpl_id)))
         }
     }
@@ -119,13 +138,17 @@ impl CPLManager {
     
     /// Start all CPLs
     pub async fn start_all(&self) -> Result<()> {
-        let cpls = self.cpls.read();
-        let mut errors = Vec::new();
+        // Clone all CPLs before dropping the lock to avoid holding lock across await
+        let cpls_to_start: Vec<(String, Arc<ConsciencePersistentLoop>)> = {
+            let cpls = self.cpls.read();
+            cpls.iter().map(|(id, cpl)| (id.clone(), cpl.clone())).collect()
+        };
         
-        for (id, cpl) in cpls.iter() {
-            if let Err(e) = cpl.clone().start().await {
+        let mut errors = Vec::new();
+        for (id, cpl) in cpls_to_start {
+            if let Err(e) = cpl.start().await {
                 error!("Failed to start CPL {}: {}", id, e);
-                errors.push((id.clone(), e));
+                errors.push((id, e));
             }
         }
         
@@ -138,13 +161,17 @@ impl CPLManager {
     
     /// Stop all CPLs
     pub async fn stop_all(&self) -> Result<()> {
-        let cpls = self.cpls.read();
-        let mut errors = Vec::new();
+        // Clone all CPLs before dropping the lock to avoid holding lock across await
+        let cpls_to_stop: Vec<(String, Arc<ConsciencePersistentLoop>)> = {
+            let cpls = self.cpls.read();
+            cpls.iter().map(|(id, cpl)| (id.clone(), cpl.clone())).collect()
+        };
         
-        for (id, cpl) in cpls.iter() {
+        let mut errors = Vec::new();
+        for (id, cpl) in cpls_to_stop {
             if let Err(e) = cpl.stop().await {
                 error!("Failed to stop CPL {}: {}", id, e);
-                errors.push((id.clone(), e));
+                errors.push((id, e));
             }
         }
         

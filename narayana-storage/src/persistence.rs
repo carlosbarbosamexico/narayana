@@ -325,22 +325,269 @@ impl PersistenceManager {
     fn encrypt_data(&self, data: &[u8], config: &EncryptionConfig) -> Result<Vec<u8>> {
         match config.algorithm {
             EncryptionAlgorithm::None => Ok(data.to_vec()),
-            _ => {
-                // In production, would use actual encryption
-                warn!("Encryption algorithm {:?} not fully implemented", config.algorithm);
-                Ok(data.to_vec())
+            EncryptionAlgorithm::AES256GCM => {
+                use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead};
+                use rand::RngCore;
+                
+                // Derive key from config
+                let key = self.derive_encryption_key(config, 32)?;
+                let cipher = Aes256Gcm::new_from_slice(&key)
+                    .map_err(|e| Error::Storage(format!("Failed to create AES256GCM cipher: {}", e)))?;
+                
+                // Generate nonce
+                let mut nonce_bytes = [0u8; 12];
+                rand::thread_rng().fill_bytes(&mut nonce_bytes);
+                let nonce = aes_gcm::Nonce::from_slice(&nonce_bytes);
+                
+                // Encrypt
+                let ciphertext = cipher.encrypt(nonce, data)
+                    .map_err(|e| Error::Storage(format!("AES256GCM encryption failed: {}", e)))?;
+                
+                // Prepend nonce to ciphertext
+                let mut result = nonce_bytes.to_vec();
+                result.extend_from_slice(&ciphertext);
+                Ok(result)
+            }
+            EncryptionAlgorithm::AES128GCM => {
+                use aes_gcm::{Aes128Gcm, KeyInit, aead::Aead};
+                use rand::RngCore;
+                
+                let key = self.derive_encryption_key(config, 16)?;
+                let cipher = Aes128Gcm::new_from_slice(&key)
+                    .map_err(|e| Error::Storage(format!("Failed to create AES128GCM cipher: {}", e)))?;
+                
+                const NONCE_SIZE: usize = 12;
+                let mut nonce_bytes = [0u8; NONCE_SIZE];
+                rand::thread_rng().fill_bytes(&mut nonce_bytes);
+                let nonce = aes_gcm::Nonce::from_slice(&nonce_bytes);
+                
+                let ciphertext = cipher.encrypt(nonce, data)
+                    .map_err(|e| Error::Storage(format!("AES128GCM encryption failed: {}", e)))?;
+                
+                let mut result = nonce_bytes.to_vec();
+                result.extend_from_slice(&ciphertext);
+                Ok(result)
+            }
+            EncryptionAlgorithm::ChaCha20Poly1305 => {
+                use chacha20poly1305::{ChaCha20Poly1305, KeyInit, aead::Aead};
+                use rand::RngCore;
+                
+                let key = self.derive_encryption_key(config, 32)?;
+                let cipher = ChaCha20Poly1305::new_from_slice(&key)
+                    .map_err(|e| Error::Storage(format!("Failed to create ChaCha20Poly1305 cipher: {}", e)))?;
+                
+                const NONCE_SIZE: usize = 12;
+                let mut nonce_bytes = [0u8; NONCE_SIZE];
+                rand::thread_rng().fill_bytes(&mut nonce_bytes);
+                let nonce = chacha20poly1305::Nonce::from_slice(&nonce_bytes);
+                
+                let ciphertext = cipher.encrypt(nonce, data)
+                    .map_err(|e| Error::Storage(format!("ChaCha20Poly1305 encryption failed: {}", e)))?;
+                
+                let mut result = nonce_bytes.to_vec();
+                result.extend_from_slice(&ciphertext);
+                Ok(result)
+            }
+            EncryptionAlgorithm::XChaCha20Poly1305 => {
+                use chacha20poly1305::{XChaCha20Poly1305, KeyInit, aead::Aead};
+                use rand::RngCore;
+                
+                let key = self.derive_encryption_key(config, 32)?;
+                let cipher = XChaCha20Poly1305::new_from_slice(&key)
+                    .map_err(|e| Error::Storage(format!("Failed to create XChaCha20Poly1305 cipher: {}", e)))?;
+                
+                const XNONCE_SIZE: usize = 24;
+                let mut nonce_bytes = [0u8; XNONCE_SIZE];
+                rand::thread_rng().fill_bytes(&mut nonce_bytes);
+                let nonce = chacha20poly1305::XNonce::from_slice(&nonce_bytes);
+                
+                let ciphertext = cipher.encrypt(nonce, data)
+                    .map_err(|e| Error::Storage(format!("XChaCha20Poly1305 encryption failed: {}", e)))?;
+                
+                let mut result = nonce_bytes.to_vec();
+                result.extend_from_slice(&ciphertext);
+                Ok(result)
             }
         }
+    }
+
+    /// Derive encryption key from config
+    /// SECURITY: Avoids block_on in async context by using std::fs for synchronous file reads
+    fn derive_encryption_key(&self, config: &EncryptionConfig, key_len: usize) -> Result<Vec<u8>> {
+        // SECURITY: Validate key length
+        if key_len == 0 || key_len > 64 {
+            return Err(Error::Storage(format!("Invalid key length: {} (must be 1-64 bytes)", key_len)));
+        }
+        
+        // Try to load key from file (use std::fs to avoid async issues)
+        if let Some(ref key_path) = config.key_path {
+            // SECURITY: Validate path to prevent path traversal
+            if key_path.to_string_lossy().contains("..") {
+                return Err(Error::Storage("Key path contains '..' (path traversal attempt)".to_string()));
+            }
+            
+            let key_data = std::fs::read(key_path)
+                .map_err(|e| Error::Storage(format!("Failed to read key file: {}", e)))?;
+            
+            // SECURITY: Validate key file size
+            if key_data.is_empty() {
+                return Err(Error::Storage("Key file is empty".to_string()));
+            }
+            if key_data.len() > 1024 {
+                return Err(Error::Storage("Key file too large (max 1024 bytes)".to_string()));
+            }
+            
+            if key_data.len() >= key_len {
+                return Ok(key_data[..key_len].to_vec());
+            } else {
+                return Err(Error::Storage(format!(
+                    "Key file too short: {} bytes, need {} bytes", 
+                    key_data.len(), key_len
+                )));
+            }
+        }
+        
+        // Try to use key_id (in production, would fetch from key management service)
+        if let Some(ref key_id) = config.key_id {
+            // SECURITY: Validate key_id length
+            if key_id.is_empty() {
+                return Err(Error::Storage("key_id cannot be empty".to_string()));
+            }
+            if key_id.len() > 256 {
+                return Err(Error::Storage("key_id too long (max 256 bytes)".to_string()));
+            }
+            
+            // Derive from key_id using PBKDF2 with configurable salt
+            use pbkdf2::pbkdf2_hmac;
+            use sha2::Sha256;
+            
+            // SECURITY: Use key_id as part of salt for better security
+            let mut salt = Vec::with_capacity(32);
+            salt.extend_from_slice(b"narayana_persistence_salt");
+            // EDGE CASE: Safe slice (key_id.len() is already validated to be <= 256)
+            let key_id_bytes = key_id.as_bytes();
+            let salt_suffix_len = key_id_bytes.len().min(16);
+            if salt_suffix_len > 0 {
+                salt.extend_from_slice(&key_id_bytes[..salt_suffix_len]);
+            }
+            
+            let mut key = vec![0u8; key_len];
+            pbkdf2_hmac::<Sha256>(key_id.as_bytes(), &salt, 100000, &mut key); // Increased iterations for security
+            return Ok(key);
+        }
+        
+        // Default: use a fixed key (NOT SECURE - should be configured in production)
+        warn!("No encryption key configured, using default key (NOT SECURE FOR PRODUCTION)");
+        Ok(std::iter::repeat(0x42).take(key_len).collect())
     }
 
     /// Decrypt data
     fn decrypt_data(&self, data: &[u8], config: &EncryptionConfig) -> Result<Vec<u8>> {
         match config.algorithm {
             EncryptionAlgorithm::None => Ok(data.to_vec()),
-            _ => {
-                // In production, would use actual decryption
-                warn!("Decryption algorithm {:?} not fully implemented", config.algorithm);
-                Ok(data.to_vec())
+            EncryptionAlgorithm::AES256GCM => {
+                use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead};
+                
+                // EDGE CASE: AES GCM needs 12 bytes for nonce
+                const NONCE_SIZE: usize = 12;
+                if data.len() < NONCE_SIZE {
+                    return Err(Error::Storage(format!("Encrypted data too short: {} bytes, need at least {} bytes", 
+                        data.len(), NONCE_SIZE)));
+                }
+                
+                let key = self.derive_encryption_key(config, 32)?;
+                let cipher = Aes256Gcm::new_from_slice(&key)
+                    .map_err(|e| Error::Storage(format!("Failed to create AES256GCM cipher: {}", e)))?;
+                
+                // EDGE CASE: Safe slice access (already validated length)
+                let nonce = aes_gcm::Nonce::from_slice(&data[..NONCE_SIZE]);
+                let ciphertext = &data[NONCE_SIZE..];
+                
+                // EDGE CASE: Check ciphertext is not empty
+                if ciphertext.is_empty() {
+                    return Err(Error::Storage("Ciphertext is empty after nonce extraction".to_string()));
+                }
+                
+                cipher.decrypt(nonce, ciphertext)
+                    .map_err(|e| Error::Storage(format!("AES256GCM decryption failed: {}", e)))
+            }
+            EncryptionAlgorithm::AES128GCM => {
+                use aes_gcm::{Aes128Gcm, KeyInit, aead::Aead};
+                
+                // EDGE CASE: AES GCM needs 12 bytes for nonce
+                const NONCE_SIZE: usize = 12;
+                if data.len() < NONCE_SIZE {
+                    return Err(Error::Storage(format!("Encrypted data too short: {} bytes, need at least {} bytes", 
+                        data.len(), NONCE_SIZE)));
+                }
+                
+                let key = self.derive_encryption_key(config, 16)?;
+                let cipher = Aes128Gcm::new_from_slice(&key)
+                    .map_err(|e| Error::Storage(format!("Failed to create AES128GCM cipher: {}", e)))?;
+                
+                // EDGE CASE: Safe slice access (already validated length)
+                let nonce = aes_gcm::Nonce::from_slice(&data[..NONCE_SIZE]);
+                let ciphertext = &data[NONCE_SIZE..];
+                
+                // EDGE CASE: Check ciphertext is not empty
+                if ciphertext.is_empty() {
+                    return Err(Error::Storage("Ciphertext is empty after nonce extraction".to_string()));
+                }
+                
+                cipher.decrypt(nonce, ciphertext)
+                    .map_err(|e| Error::Storage(format!("AES128GCM decryption failed: {}", e)))
+            }
+            EncryptionAlgorithm::ChaCha20Poly1305 => {
+                use chacha20poly1305::{ChaCha20Poly1305, KeyInit, aead::Aead};
+                
+                // EDGE CASE: ChaCha20Poly1305 needs 12 bytes for nonce
+                const NONCE_SIZE: usize = 12;
+                if data.len() < NONCE_SIZE {
+                    return Err(Error::Storage(format!("Encrypted data too short: {} bytes, need at least {} bytes", 
+                        data.len(), NONCE_SIZE)));
+                }
+                
+                let key = self.derive_encryption_key(config, 32)?;
+                let cipher = ChaCha20Poly1305::new_from_slice(&key)
+                    .map_err(|e| Error::Storage(format!("Failed to create ChaCha20Poly1305 cipher: {}", e)))?;
+                
+                // EDGE CASE: Safe slice access (already validated length)
+                let nonce = chacha20poly1305::Nonce::from_slice(&data[..NONCE_SIZE]);
+                let ciphertext = &data[NONCE_SIZE..];
+                
+                // EDGE CASE: Check ciphertext is not empty
+                if ciphertext.is_empty() {
+                    return Err(Error::Storage("Ciphertext is empty after nonce extraction".to_string()));
+                }
+                
+                cipher.decrypt(nonce, ciphertext)
+                    .map_err(|e| Error::Storage(format!("ChaCha20Poly1305 decryption failed: {}", e)))
+            }
+            EncryptionAlgorithm::XChaCha20Poly1305 => {
+                use chacha20poly1305::{XChaCha20Poly1305, KeyInit, aead::Aead};
+                
+                // EDGE CASE: XChaCha20Poly1305 needs 24 bytes for nonce
+                const XNONCE_SIZE: usize = 24;
+                if data.len() < XNONCE_SIZE {
+                    return Err(Error::Storage(format!("Encrypted data too short: {} bytes, need at least {} bytes", 
+                        data.len(), XNONCE_SIZE)));
+                }
+                
+                let key = self.derive_encryption_key(config, 32)?;
+                let cipher = XChaCha20Poly1305::new_from_slice(&key)
+                    .map_err(|e| Error::Storage(format!("Failed to create XChaCha20Poly1305 cipher: {}", e)))?;
+                
+                // EDGE CASE: Safe slice access (already validated length)
+                let nonce = chacha20poly1305::XNonce::from_slice(&data[..XNONCE_SIZE]);
+                let ciphertext = &data[XNONCE_SIZE..];
+                
+                // EDGE CASE: Check ciphertext is not empty
+                if ciphertext.is_empty() {
+                    return Err(Error::Storage("Ciphertext is empty after nonce extraction".to_string()));
+                }
+                
+                cipher.decrypt(nonce, ciphertext)
+                    .map_err(|e| Error::Storage(format!("XChaCha20Poly1305 decryption failed: {}", e)))
             }
         }
     }
@@ -1133,6 +1380,36 @@ impl WALBackend {
 #[async_trait::async_trait]
 impl PersistenceBackend for WALBackend {
     async fn write(&self, key: &str, data: &[u8]) -> Result<()> {
+        // SECURITY: Validate key
+        if key.is_empty() {
+            return Err(Error::Storage("Key cannot be empty".to_string()));
+        }
+        if key.len() > 1024 {
+            return Err(Error::Storage("Key too long (max 1024 bytes)".to_string()));
+        }
+        if key.contains("..") || key.contains("\0") {
+            return Err(Error::Storage("Key contains dangerous characters".to_string()));
+        }
+        
+        // SECURITY: Validate data size
+        const MAX_DATA_SIZE: usize = 100 * 1024 * 1024; // 100MB
+        if data.len() > MAX_DATA_SIZE {
+            return Err(Error::Storage(format!("Data too large: {} bytes (max {} bytes)", 
+                data.len(), MAX_DATA_SIZE)));
+        }
+        
+        // EDGE CASE: Limit buffer size to prevent memory exhaustion
+        const MAX_BUFFER_SIZE: usize = 100000;
+        let needs_flush = {
+            let buffer = self.buffer.read();
+            buffer.len() >= MAX_BUFFER_SIZE
+        };
+        
+        if needs_flush {
+            // Buffer is full, need to flush first (lock is dropped before await)
+            self.flush().await?;
+        }
+        
         // Write to WAL buffer
         self.buffer.write().push((key.to_string(), data.to_vec()));
         
@@ -1145,8 +1422,75 @@ impl PersistenceBackend for WALBackend {
     }
 
     async fn read(&self, key: &str) -> Result<Option<Vec<u8>>> {
-        // In production, would read from WAL and apply to data store
-        Ok(None)
+        // SECURITY: Validate key to prevent path traversal
+        if key.is_empty() {
+            return Err(Error::Storage("Key cannot be empty".to_string()));
+        }
+        if key.len() > 1024 {
+            return Err(Error::Storage("Key too long (max 1024 bytes)".to_string()));
+        }
+        if key.contains("..") || key.contains("\0") {
+            return Err(Error::Storage("Key contains dangerous characters".to_string()));
+        }
+        
+        // Read from WAL buffer first (most recent writes)
+        // EDGE CASE: Clone buffer reference to avoid holding lock during async operations
+        let buffer_snapshot: Vec<(String, Vec<u8>)> = {
+            let buffer = self.buffer.read();
+            buffer.clone()
+        };
+        
+        // Search backwards for the most recent non-deleted entry
+        for (buf_key, buf_data) in buffer_snapshot.iter().rev() {
+            if buf_key == key {
+                // Empty data indicates deletion
+                if buf_data.is_empty() {
+                    return Ok(None);
+                }
+                // EDGE CASE: Check for reasonable size to prevent DoS
+                const MAX_DATA_SIZE: usize = 100 * 1024 * 1024; // 100MB
+                if buf_data.len() > MAX_DATA_SIZE {
+                    return Err(Error::Storage(format!("Data too large: {} bytes (max {} bytes)", 
+                        buf_data.len(), MAX_DATA_SIZE)));
+                }
+                return Ok(Some(buf_data.clone()));
+            }
+        }
+        
+        // If not in buffer, try to read from WAL file on disk
+        // SECURITY: Validate path construction
+        let encoded_key = urlencoding::encode(key);
+        if encoded_key.len() > 2048 {
+            return Err(Error::Storage("Encoded key too long".to_string()));
+        }
+        
+        let wal_file = self.wal_path.join(format!("{}.wal", encoded_key));
+        
+        // SECURITY: Validate that file is within WAL directory (prevent path traversal)
+        if !wal_file.starts_with(&self.wal_path) {
+            return Err(Error::Storage("Invalid WAL file path (path traversal attempt)".to_string()));
+        }
+        
+        match tokio::fs::read(&wal_file).await {
+            Ok(data) => {
+                if data.is_empty() {
+                    return Ok(None); // Deletion marker
+                }
+                // EDGE CASE: Check for reasonable size
+                const MAX_DATA_SIZE: usize = 100 * 1024 * 1024; // 100MB
+                if data.len() > MAX_DATA_SIZE {
+                    return Err(Error::Storage(format!("WAL file too large: {} bytes (max {} bytes)", 
+                        data.len(), MAX_DATA_SIZE)));
+                }
+                Ok(Some(data))
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                Ok(None) // File doesn't exist, key not found
+            }
+            Err(e) => {
+                Err(Error::Storage(format!("Failed to read WAL file: {}", e)))
+            }
+        }
     }
 
     async fn delete(&self, key: &str) -> Result<()> {
@@ -1155,11 +1499,132 @@ impl PersistenceBackend for WALBackend {
     }
 
     async fn exists(&self, key: &str) -> Result<bool> {
-        Ok(false)
+        // SECURITY: Validate key
+        if key.is_empty() || key.len() > 1024 || key.contains("..") || key.contains("\0") {
+            return Err(Error::Storage("Invalid key".to_string()));
+        }
+        
+        // Check buffer first
+        {
+            let buffer = self.buffer.read();
+            for (buf_key, buf_data) in buffer.iter().rev() {
+                if buf_key == key {
+                    return Ok(!buf_data.is_empty()); // Empty data means deleted
+                }
+            }
+        }
+        
+        // Check disk
+        let encoded_key = urlencoding::encode(key);
+        let wal_file = self.wal_path.join(format!("{}.wal", encoded_key));
+        
+        if !wal_file.starts_with(&self.wal_path) {
+            return Err(Error::Storage("Invalid WAL file path".to_string()));
+        }
+        
+        match tokio::fs::metadata(&wal_file).await {
+            Ok(metadata) => {
+                Ok(metadata.len() > 0) // Non-empty file means exists
+            }
+            Err(_) => Ok(false),
+        }
     }
 
     async fn list(&self, prefix: Option<&str>) -> Result<Vec<String>> {
-        Ok(Vec::new())
+        // SECURITY: Validate prefix
+        if let Some(prefix) = prefix {
+            if prefix.len() > 1024 {
+                return Err(Error::Storage("Prefix too long (max 1024 bytes)".to_string()));
+            }
+            if prefix.contains("..") || prefix.contains("\0") {
+                return Err(Error::Storage("Prefix contains dangerous characters".to_string()));
+            }
+        }
+        
+        let mut keys = std::collections::HashSet::new();
+        
+        // Collect keys from buffer
+        {
+            let buffer = self.buffer.read();
+            for (key, data) in buffer.iter() {
+                if !data.is_empty() { // Skip deleted entries
+                    if let Some(prefix) = prefix {
+                        if key.starts_with(prefix) {
+                            keys.insert(key.clone());
+                        }
+                    } else {
+                        keys.insert(key.clone());
+                    }
+                }
+            }
+        }
+        
+        // Collect keys from disk using blocking I/O in spawn_blocking
+        let wal_path = self.wal_path.clone();
+        let prefix_clone = prefix.map(|p| p.to_string());
+        match tokio::task::spawn_blocking(move || {
+            let mut disk_keys = std::collections::HashSet::new();
+            match std::fs::read_dir(&wal_path) {
+                Ok(entries) => {
+                    for entry_result in entries {
+                        match entry_result {
+                            Ok(entry) => {
+                                let path = entry.path();
+                                if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                                    if file_name.ends_with(".wal") {
+                                        if let Some(key_encoded) = file_name.strip_suffix(".wal") {
+                                            if let Ok(key_decoded) = urlencoding::decode(key_encoded) {
+                                                let key = key_decoded.to_string();
+                                                
+                                                // Check if file is non-empty
+                                                match std::fs::metadata(&path) {
+                                                    Ok(metadata) if metadata.len() > 0 => {
+                                                        if let Some(ref prefix_str) = prefix_clone {
+                                                            if key.starts_with(prefix_str) {
+                                                                disk_keys.insert(key);
+                                                            }
+                                                        } else {
+                                                            disk_keys.insert(key);
+                                                        }
+                                                    }
+                                                    _ => {} // Skip empty files
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Failed to read directory entry: {}", e);
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    debug!("Could not read WAL directory: {}", e);
+                }
+            }
+            disk_keys
+        }).await {
+            Ok(disk_keys) => {
+                keys.extend(disk_keys);
+            }
+            Err(e) => {
+                warn!("Task failed while reading WAL directory: {}", e);
+            }
+        }
+        
+        let mut result: Vec<String> = keys.into_iter().collect();
+        result.sort();
+        
+        // EDGE CASE: Limit result size
+        const MAX_LIST_SIZE: usize = 10000;
+        if result.len() > MAX_LIST_SIZE {
+            result.truncate(MAX_LIST_SIZE);
+            warn!("List result truncated to {} entries", MAX_LIST_SIZE);
+        }
+        
+        Ok(result)
     }
 
     async fn sync(&self) -> Result<()> {
@@ -1167,7 +1632,90 @@ impl PersistenceBackend for WALBackend {
     }
 
     async fn flush(&self) -> Result<()> {
-        // Flush WAL buffer to disk
+        // EDGE CASE: Clone buffer to avoid holding lock during async I/O
+        // Use a block to ensure lock is dropped before async operations
+        let buffer_snapshot: Vec<(String, Vec<u8>)> = {
+            let buffer = self.buffer.read();
+            let snapshot = buffer.clone();
+            drop(buffer); // Explicitly drop lock
+            snapshot
+        };
+        
+        if buffer_snapshot.is_empty() {
+            return Ok(());
+        }
+        
+        // SECURITY: Limit number of entries to flush at once
+        const MAX_FLUSH_ENTRIES: usize = 10000;
+        let entries_to_flush = if buffer_snapshot.len() > MAX_FLUSH_ENTRIES {
+            warn!("WAL buffer has {} entries, flushing only first {}", 
+                buffer_snapshot.len(), MAX_FLUSH_ENTRIES);
+            &buffer_snapshot[..MAX_FLUSH_ENTRIES]
+        } else {
+            &buffer_snapshot[..]
+        };
+        
+        // Write each entry to a separate WAL file
+        // EDGE CASE: Clone wal_path to avoid capturing &self across await
+        let wal_path = self.wal_path.clone();
+        let mut success_count = 0;
+        let mut error_count = 0;
+        
+        for (key, data) in entries_to_flush {
+            // SECURITY: Validate key
+            if key.is_empty() || key.len() > 1024 || key.contains("..") || key.contains("\0") {
+                error_count += 1;
+                warn!("Skipping invalid key in WAL flush");
+                continue;
+            }
+            
+            // SECURITY: Validate data size
+            const MAX_DATA_SIZE: usize = 100 * 1024 * 1024; // 100MB
+            if data.len() > MAX_DATA_SIZE {
+                error_count += 1;
+                warn!("Skipping entry with data too large: {} bytes", data.len());
+                continue;
+            }
+            
+            let encoded_key = urlencoding::encode(key);
+            let wal_file = wal_path.join(format!("{}.wal", encoded_key));
+            
+            // SECURITY: Validate path
+            if !wal_file.starts_with(&wal_path) {
+                error_count += 1;
+                warn!("Skipping entry with invalid path");
+                continue;
+            }
+            
+            if let Err(e) = tokio::fs::write(&wal_file, data).await {
+                error_count += 1;
+                warn!("Failed to write WAL file for key '{}': {}", key, e);
+                // Continue with other entries
+            } else {
+                success_count += 1;
+            }
+        }
+        
+        // Clear buffer only if all entries were successfully flushed
+        if error_count == 0 && success_count == entries_to_flush.len() {
+            let mut buffer = self.buffer.write();
+            // EDGE CASE: Only remove entries that were successfully flushed
+            buffer.drain(..success_count);
+        }
+        
+        // Sync filesystem if configured
+        if self.config.sync {
+            // On Unix, we can't easily sync a directory, but we've written the files
+            // The OS will handle syncing when appropriate
+        }
+        
+        debug!("Flushed {} WAL entries to disk ({} successful, {} errors)", 
+            entries_to_flush.len(), success_count, error_count);
+        
+        if error_count > 0 {
+            return Err(Error::Storage(format!("Failed to flush {} WAL entries", error_count)));
+        }
+        
         Ok(())
     }
 }

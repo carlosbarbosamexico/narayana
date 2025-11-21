@@ -4,6 +4,8 @@
 
 use crate::cognitive::{CognitiveBrain, Experience, Memory, MemoryType};
 use crate::conscience_persistent_loop::CPLEvent;
+use crate::arrow_of_time::ArrowOfTimeController;
+use crate::temporal_accelerator::TemporalAccelerator;
 use narayana_core::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -35,6 +37,10 @@ pub struct DreamingLoop {
     // Replay statistics
     replay_count: Arc<RwLock<u64>>,
     experiences_replayed: Arc<RwLock<usize>>,
+    
+    // Arrow of Time integration (optional)
+    arrow_of_time: Arc<RwLock<Option<Arc<ArrowOfTimeController>>>>,
+    temporal_accelerator: Arc<RwLock<Option<Arc<TemporalAccelerator>>>>,
 }
 
 impl DreamingLoop {
@@ -55,7 +61,21 @@ impl DreamingLoop {
             last_replay: Arc::new(RwLock::new(0)),
             replay_count: Arc::new(RwLock::new(0)),
             experiences_replayed: Arc::new(RwLock::new(0)),
+            arrow_of_time: Arc::new(RwLock::new(None)),
+            temporal_accelerator: Arc::new(RwLock::new(None)),
         }
+    }
+
+    /// Set Arrow of Time controller
+    pub fn set_arrow_of_time(&self, aot: Arc<ArrowOfTimeController>) {
+        *self.arrow_of_time.write() = Some(aot);
+        info!("Arrow of Time controller attached to DreamingLoop");
+    }
+
+    /// Set Temporal Accelerator
+    pub fn set_temporal_accelerator(&self, accelerator: Arc<TemporalAccelerator>) {
+        *self.temporal_accelerator.write() = Some(accelerator);
+        info!("Temporal Accelerator attached to DreamingLoop");
     }
     
     /// Replay experiences (main dreaming cycle)
@@ -83,7 +103,10 @@ impl DreamingLoop {
             return Ok(());
         }
         
-        // Sample batch for replay (epsilon-greedy)
+        // Apply Arrow of Time ordering if available
+        self.apply_arrow_of_time_ordering().await?;
+        
+        // Sample batch for replay (epsilon-greedy or entropy-based)
         let batch = self.sample_replay_batch().await?;
         
         if batch.is_empty() {
@@ -146,7 +169,44 @@ impl DreamingLoop {
         Ok(())
     }
     
-    /// Sample batch for replay (epsilon-greedy)
+    /// Apply Arrow of Time ordering to replay buffer
+    async fn apply_arrow_of_time_ordering(&self) -> Result<()> {
+        if let Some(ref aot) = *self.arrow_of_time.read() {
+            let mut buffer = self.replay_buffer.write();
+            let mut experiences: Vec<Experience> = buffer.drain(..).collect();
+            
+            // Order experiences based on Arrow of Time configuration
+            if let Err(e) = aot.order_experiences(&mut experiences) {
+                warn!("Failed to order experiences with Arrow of Time: {}", e);
+            }
+            
+            // Apply temporal acceleration if available
+            let final_experiences = if let Some(ref accelerator) = *self.temporal_accelerator.read() {
+                // Clone experiences before moving them, in case acceleration fails
+                let experiences_clone = experiences.clone();
+                match accelerator.accelerate(experiences) {
+                    Ok(accelerated) => {
+                        debug!("Applied temporal acceleration to replay buffer");
+                        accelerated
+                    }
+                    Err(e) => {
+                        warn!("Failed to apply temporal acceleration: {}", e);
+                        experiences_clone
+                    }
+                }
+            } else {
+                experiences
+            };
+            
+            // Put experiences back in buffer
+            for exp in final_experiences {
+                buffer.push_back(exp);
+            }
+        }
+        Ok(())
+    }
+
+    /// Sample batch for replay (epsilon-greedy or entropy-based)
     async fn sample_replay_batch(&self) -> Result<Vec<Experience>> {
         let buffer = self.replay_buffer.read();
         
@@ -154,14 +214,26 @@ impl DreamingLoop {
             return Ok(Vec::new());
         }
         
+        // Check if Arrow of Time controller is available for entropy-based sampling
+        if let Some(ref aot) = *self.arrow_of_time.read() {
+            let experiences: Vec<Experience> = buffer.iter().cloned().collect();
+            let batch_size = self.replay_batch_size.min(experiences.len());
+            
+            // Use entropy-based sampling from Arrow of Time controller
+            match aot.sample_by_entropy(&experiences, batch_size) {
+                Ok(selected) => {
+                    debug!("Sampled {} experiences using entropy-based sampling", selected.len());
+                    return Ok(selected);
+                }
+                Err(e) => {
+                    warn!("Entropy-based sampling failed, falling back to epsilon-greedy: {}", e);
+                }
+            }
+        }
+        
+        // Fallback to epsilon-greedy sampling
         let mut rng = rand::thread_rng();
         let mut batch = Vec::new();
-        
-        // Epsilon-greedy sampling
-        // Edge case: Handle empty buffer
-        if buffer.is_empty() {
-            return Ok(Vec::new());
-        }
         
         let batch_size = self.replay_batch_size.min(buffer.len());
         for _ in 0..batch_size {

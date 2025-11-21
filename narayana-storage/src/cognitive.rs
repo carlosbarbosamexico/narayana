@@ -131,6 +131,15 @@ pub struct Experience {
     pub context: HashMap<String, serde_json::Value>,
     pub patterns: Vec<Pattern>, // Learned patterns from this experience
     pub embedding: Option<Vec<f32>>,
+    /// Complexity score (0.0-1.0) for Arrow of Time system
+    #[serde(default)]
+    pub complexity: Option<f64>,
+    /// Entropy score (0.0-1.0) for Arrow of Time system
+    #[serde(default)]
+    pub entropy: Option<f64>,
+    /// Modality type (visual, audio, voice, sound, multi-modal)
+    #[serde(default)]
+    pub modality: Option<String>,
 }
 
 /// Pattern - learned pattern from experiences
@@ -146,7 +155,7 @@ pub struct Pattern {
     pub last_seen: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PatternType {
     Causal,        // Cause-effect relationships
     Temporal,      // Time-based patterns
@@ -159,8 +168,8 @@ pub enum PatternType {
 /// Cognitive Brain - main cognitive architecture
 /// With Transform & Filter System - The Real Brain!
 pub struct CognitiveBrain {
-    pub(crate) thoughts: Arc<RwLock<HashMap<String, Thought>>>,
-    pub(crate) memories: Arc<RwLock<HashMap<String, Memory>>>,
+    pub thoughts: Arc<RwLock<HashMap<String, Thought>>>,
+    pub memories: Arc<RwLock<HashMap<String, Memory>>>,
     pub(crate) experiences: Arc<RwLock<HashMap<String, Experience>>>,
     pub(crate) patterns: Arc<RwLock<HashMap<String, Pattern>>>,
     working_memory: Arc<RwLock<Vec<CognitiveState>>>,
@@ -509,6 +518,9 @@ impl CognitiveBrain {
             context: HashMap::new(),
             patterns: Vec::new(),
             embedding,
+            complexity: None, // Can be set later by AOT system
+            entropy: None,    // Can be set later by AOT system
+            modality: None,   // Can be set later by AOT system
         };
 
         self.experiences.write().insert(experience_id.clone(), experience.clone());
@@ -527,6 +539,31 @@ impl CognitiveBrain {
         });
 
         Ok(experience_id)
+    }
+
+    /// Update experience metadata (complexity, entropy, modality)
+    pub fn update_experience_metadata(
+        &self,
+        experience_id: &str,
+        complexity: Option<f64>,
+        entropy: Option<f64>,
+        modality: Option<String>,
+    ) -> Result<()> {
+        let mut experiences = self.experiences.write();
+        let experience = experiences.get_mut(experience_id)
+            .ok_or_else(|| Error::Storage(format!("Experience {} not found", experience_id)))?;
+
+        if let Some(c) = complexity {
+            experience.complexity = Some(c.clamp(0.0, 1.0));
+        }
+        if let Some(e) = entropy {
+            experience.entropy = Some(e.clamp(0.0, 1.0));
+        }
+        if let Some(m) = modality {
+            experience.modality = Some(m);
+        }
+
+        Ok(())
     }
 
     /// Retrieve memories by semantic similarity
@@ -1088,8 +1125,8 @@ impl CognitiveBrain {
             let conditions_str = serde_json::to_string(&pattern.conditions).unwrap_or_default();
             let query_str = serde_json::to_string(conditions).unwrap_or_default();
 
-            // Check for similarity (in production, would use proper JSON comparison)
-            if conditions_str.contains(&query_str) || query_str.contains(&conditions_str) {
+            // Proper JSON comparison using structural equality
+            if self.json_conditions_match(&pattern.conditions, conditions) {
                 matches.push(pattern.clone());
             }
         }
@@ -1104,6 +1141,123 @@ impl CognitiveBrain {
         Ok(matches)
     }
 
+    /// Check if JSON conditions match using structural comparison
+    /// EDGE CASE: Prevents infinite recursion with depth limit
+    fn json_conditions_match(&self, pattern_conditions: &serde_json::Value, query_conditions: &serde_json::Value) -> bool {
+        self.json_conditions_match_with_depth(pattern_conditions, query_conditions, 0)
+    }
+
+    /// Internal recursive comparison with depth limit
+    fn json_conditions_match_with_depth(&self, pattern_conditions: &serde_json::Value, query_conditions: &serde_json::Value, depth: usize) -> bool {
+        use serde_json::Value;
+        
+        // EDGE CASE: Prevent stack overflow from deeply nested structures
+        const MAX_DEPTH: usize = 100;
+        if depth > MAX_DEPTH {
+            tracing::warn!("JSON comparison exceeded max depth {}, returning false", MAX_DEPTH);
+            return false;
+        }
+        
+        match (pattern_conditions, query_conditions) {
+            // Exact match for primitives
+            (Value::Null, Value::Null) => true,
+            (Value::Bool(a), Value::Bool(b)) => a == b,
+            (Value::Number(a), Value::Number(b)) => {
+                // EDGE CASE: Handle NaN and Infinity
+                if a.is_f64() && b.is_f64() {
+                    // EDGE CASE: Safe unwrap (we already checked is_f64)
+                    if let (Some(a_f), Some(b_f)) = (a.as_f64(), b.as_f64()) {
+                        // NaN != NaN, Infinity == Infinity if same sign
+                        if a_f.is_nan() && b_f.is_nan() {
+                            return false; // NaN never matches
+                        }
+                        if a_f.is_infinite() && b_f.is_infinite() {
+                            return a_f.signum() == b_f.signum();
+                        }
+                    }
+                }
+                a == b
+            }
+            (Value::String(a), Value::String(b)) => a == b,
+            
+            // Array matching: query array must be subset or equal
+            (Value::Array(pattern_arr), Value::Array(query_arr)) => {
+                // EDGE CASE: Empty arrays
+                if query_arr.is_empty() {
+                    return true; // Empty query matches any pattern
+                }
+                if pattern_arr.is_empty() {
+                    return false; // Non-empty query can't match empty pattern
+                }
+                
+                // EDGE CASE: Prevent DoS from very large arrays
+                const MAX_ARRAY_SIZE: usize = 10000;
+                if query_arr.len() > MAX_ARRAY_SIZE || pattern_arr.len() > MAX_ARRAY_SIZE {
+                    tracing::warn!("Array too large for comparison (query: {}, pattern: {})", 
+                        query_arr.len(), pattern_arr.len());
+                    return false;
+                }
+                
+                if pattern_arr.len() < query_arr.len() {
+                    return false; // Pattern can't contain more than it has
+                }
+                
+                // Check if all query elements are in pattern (order-independent)
+                // EDGE CASE: Prevent DoS from quadratic complexity with large arrays
+                for query_elem in query_arr {
+                    let mut found = false;
+                    // EDGE CASE: Limit search to prevent excessive iterations
+                    let search_limit = pattern_arr.len().min(1000);
+                    for pattern_elem in pattern_arr.iter().take(search_limit) {
+                        if self.json_conditions_match_with_depth(pattern_elem, query_elem, depth + 1) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if !found {
+                        return false;
+                    }
+                }
+                true
+            }
+            
+            // Object matching: query object keys must be subset of pattern
+            (Value::Object(pattern_obj), Value::Object(query_obj)) => {
+                // EDGE CASE: Empty objects
+                if query_obj.is_empty() {
+                    return true; // Empty query matches any pattern
+                }
+                
+                // EDGE CASE: Prevent DoS from very large objects
+                const MAX_OBJECT_SIZE: usize = 10000;
+                if query_obj.len() > MAX_OBJECT_SIZE || pattern_obj.len() > MAX_OBJECT_SIZE {
+                    tracing::warn!("Object too large for comparison (query: {}, pattern: {})", 
+                        query_obj.len(), pattern_obj.len());
+                    return false;
+                }
+                
+                for (query_key, query_value) in query_obj {
+                    // EDGE CASE: Validate key
+                    if query_key.is_empty() || query_key.len() > 1024 {
+                        return false;
+                    }
+                    
+                    if let Some(pattern_value) = pattern_obj.get(query_key) {
+                        if !self.json_conditions_match_with_depth(pattern_value, query_value, depth + 1) {
+                            return false;
+                        }
+                    } else {
+                        return false; // Query has key that pattern doesn't have
+                    }
+                }
+                true
+            }
+            
+            // Type mismatch
+            _ => false,
+        }
+    }
+
     /// Apply learned pattern (predict action from conditions)
     pub fn apply_pattern(&self, pattern_id: &str, conditions: &serde_json::Value) -> Result<Option<serde_json::Value>> {
         let patterns = self.patterns.read();
@@ -1113,7 +1267,7 @@ impl CognitiveBrain {
             let pattern_conditions_str = serde_json::to_string(&pattern.conditions).unwrap_or_default();
             let query_conditions_str = serde_json::to_string(conditions).unwrap_or_default();
 
-            if pattern_conditions_str.contains(&query_conditions_str) || query_conditions_str.contains(&pattern_conditions_str) {
+            if self.json_conditions_match(&pattern.conditions, conditions) {
                 // Return predicted action
                 return Ok(Some(pattern.action.clone()));
             }

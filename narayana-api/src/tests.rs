@@ -193,7 +193,7 @@ async fn test_float_nan_rejection() {
     let table = client.database("test").table("float_table");
     let result = table
         .insert()
-        .row(vec![Value::Float(f64::NAN)])
+        .row(vec![Value::Float64(f64::NAN)])
         .execute()
         .await;
     assert!(result.is_err());
@@ -219,7 +219,7 @@ async fn test_float_infinity_rejection() {
     let table = client.database("test").table("float_table");
     let result = table
         .insert()
-        .row(vec![Value::Float(f64::INFINITY)])
+        .row(vec![Value::Float64(f64::INFINITY)])
         .execute()
         .await;
     assert!(result.is_err());
@@ -229,7 +229,7 @@ async fn test_float_infinity_rejection() {
     let table = client.database("test").table("float_table");
     let result = table
         .insert()
-        .row(vec![Value::Float(f64::NEG_INFINITY)])
+        .row(vec![Value::Float64(f64::NEG_INFINITY)])
         .execute()
         .await;
     assert!(result.is_err());
@@ -254,7 +254,7 @@ async fn test_float_negative_zero_normalization() {
     let table = client.database("test").table("float_table");
     let result = table
         .insert()
-        .row(vec![Value::Float(-0.0)])
+        .row(vec![Value::Float64(-0.0)])
         .execute()
         .await;
     // The insert should succeed, and -0.0 should be normalized
@@ -289,7 +289,7 @@ async fn test_integer_overflow_i8() {
     let table = client.database("test").table("int8_table");
     let result = table
         .insert()
-        .row(vec![Value::Int(i8::MAX as i64 + 1)])
+        .row(vec![Value::Int64(i8::MAX as i64 + 1)])
         .execute()
         .await;
     assert!(result.is_err());
@@ -320,7 +320,7 @@ async fn test_integer_overflow_u8() {
     let table = client.database("test").table("uint8_table");
     let result = table
         .insert()
-        .row(vec![Value::Int(-1)])
+        .row(vec![Value::Int64(-1)])
         .execute()
         .await;
     assert!(result.is_err());
@@ -329,7 +329,7 @@ async fn test_integer_overflow_u8() {
     let table = client.database("test").table("uint8_table");
     let result = table
         .insert()
-        .row(vec![Value::Int(u8::MAX as i64 + 1)])
+        .row(vec![Value::Int64(u8::MAX as i64 + 1)])
         .execute()
         .await;
     assert!(result.is_err());
@@ -359,7 +359,7 @@ async fn test_integer_overflow_u64() {
     let table = client.database("test").table("uint64_table");
     let result = table
         .insert()
-        .row(vec![Value::Int(-1)])
+        .row(vec![Value::Int64(-1)])
         .execute()
         .await;
     assert!(result.is_err());
@@ -390,7 +390,7 @@ async fn test_row_length_mismatch() {
     let table = client.database("test").table("test_table");
     let result = table
         .insert()
-        .row(vec![Value::Int(1)]) // Only 1 value, needs 2
+        .row(vec![Value::Int64(1)]) // Only 1 value, needs 2
         .execute()
         .await;
     assert!(result.is_err());
@@ -441,7 +441,7 @@ async fn test_insert_batch_size_limit() {
     let table = client.database("test").table("test_table");
     let mut builder = table.insert();
     for i in 0..1_000_001 {
-        builder = builder.row(vec![Value::Int(i)]);
+        builder = builder.row(vec![Value::Int64(i)]);
     }
     let result = builder.execute().await;
     assert!(result.is_err());
@@ -471,7 +471,7 @@ async fn test_query_limit_zero() {
         .database("test")
         .table("test_table")
         .insert()
-        .row(vec![Value::Int(1)])
+        .row(vec![Value::Int64(1)])
         .execute()
         .await
         .unwrap();
@@ -563,8 +563,8 @@ async fn test_create_table_and_insert() {
     // Insert data
     let result = table
         .insert()
-        .row(vec![Value::Int(1), Value::String("Alice".to_string())])
-        .row(vec![Value::Int(2), Value::String("Bob".to_string())])
+        .row(vec![Value::Int64(1), Value::String("Alice".to_string())])
+        .row(vec![Value::Int64(2), Value::String("Bob".to_string())])
         .execute()
         .await
         .unwrap();
@@ -590,8 +590,8 @@ async fn test_query_data() {
     
     table
         .insert()
-        .row(vec![Value::Int(1), Value::String("Alice".to_string())])
-        .row(vec![Value::Int(2), Value::String("Bob".to_string())])
+        .row(vec![Value::Int64(1), Value::String("Alice".to_string())])
+        .row(vec![Value::Int64(2), Value::String("Bob".to_string())])
         .execute()
         .await
         .unwrap();
@@ -661,7 +661,7 @@ async fn test_type_conversion_int_to_float() {
         .database("test")
         .table("float_table")
         .insert()
-        .row(vec![Value::Int(42)])
+        .row(vec![Value::Int64(42)])
         .execute()
         .await;
     assert!(result.is_ok());
@@ -686,7 +686,7 @@ async fn test_type_conversion_float_to_int_rejection() {
     let table = client.database("test").table("int_table");
     let result = table
         .insert()
-        .row(vec![Value::Float(42.5)])
+        .row(vec![Value::Float64(42.5)])
         .execute()
         .await;
     assert!(result.is_err());
@@ -918,7 +918,7 @@ async fn test_batch_operations_with_salt() {
     let batch = BatchOperations::new(Arc::clone(&connection));
     let result = batch
         .insert("batch_table", vec![
-            Row::new(vec![Value::Int(1), Value::String("test".to_string())])
+            Row::new(vec![Value::Int64(1), Value::String("test".to_string())])
         ])
         .execute()
         .await;
@@ -953,7 +953,7 @@ async fn test_bulk_operations_with_salt() {
     
     let result = bulk
         .insert("bulk_table", vec![
-            Row::new(vec![Value::Int(1), Value::String("test".to_string())])
+            Row::new(vec![Value::Int64(1), Value::String("test".to_string())])
         ])
         .execute()
         .await;

@@ -16,6 +16,7 @@ narayana-storage = { path = "../narayana-storage" }
 narayana-query = { path = "../narayana-query" }
 narayana-api = { path = "../narayana-api" }
 narayana-llm = { path = "../narayana-llm" }
+narayana-me = { path = "../narayana-me", optional = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 axum = { workspace = true }
@@ -46,10 +47,15 @@ tempfile = "3.8"
 rand = "0.8"
 hex = "0.4"
 parking_lot = { workspace = true }
+async-trait = { workspace = true }
 futures = "0.3"
 futures-util = "0.3"
 crossbeam = { workspace = true }
 axum-extra = { version = "0.4" }
 tokio-tungstenite = "0.24"
 toml = "0.8"
+
+[features]
+default = []
+avatar = ["narayana-me"]
 

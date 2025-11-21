@@ -1,0 +1,69 @@
+[package]
+name = "narayana-sc"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Sound capture and audio analysis for narayana"
+
+[dependencies]
+narayana-core = { path = "../narayana-core" }
+narayana-wld = { path = "../narayana-wld" }
+narayana-storage = { path = "../narayana-storage" }
+narayana-llm = { path = "../narayana-llm", optional = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+parking_lot = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+bytes = { workspace = true }
+chrono = { workspace = true }
+futures-util = "0.3"
+futures = "0.3"
+
+# Audio processing - Latest 2025 tech
+cpal = "0.15"  # Cross-platform audio I/O (latest stable)
+hound = "3.5"  # WAV file support
+rubato = "0.14"  # Audio resampling
+# Audio analysis - Modern FFT
+rustfft = "6.1"  # FFT for frequency analysis
+ndarray = "0.15"  # Array operations for audio analysis
+# Advanced audio processing - 2025 features
+ringbuf = "0.4"  # Zero-copy ring buffers for low-latency streaming
+crossbeam-channel = "0.5"  # High-performance channels
+# Spatial audio support
+nalgebra = "0.32"  # For 3D spatial audio calculations
+# Audio codecs (neural codec support ready)
+ogg = "0.8"  # OGG container support
+# Real-time processing
+rayon = "1.8"  # Parallel processing for audio analysis
+
+# Optional LLM integration for voice-to-text
+[features]
+default = []
+llm-integration = ["narayana-llm"]
+
+[dev-dependencies]
+tokio-test = { workspace = true }
+tempfile = "3.8"
+tracing-subscriber = "0.3"
+
+[[example]]
+name = "basic_audio_capture"
+path = "examples/basic_audio_capture.rs"
+
+[[example]]
+name = "audio_analysis"
+path = "examples/audio_analysis.rs"
+
+[[example]]
+name = "comprehensive_capture"
+path = "examples/comprehensive_capture.rs"
+
+[[example]]
+name = "cpl_integration"
+path = "examples/cpl_integration.rs"
+

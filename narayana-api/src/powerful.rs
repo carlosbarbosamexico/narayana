@@ -848,39 +848,39 @@ impl Pipeline {
         let filter_val = match filter_value {
             serde_json::Value::Number(n) => {
                 if let Some(i) = n.as_i64() {
-                    Value::Int(i)
+                    Value::Int64(i)
                 } else if let Some(f) = n.as_f64() {
-                    Value::Float(f)
+                    Value::Float64(f)
                 } else {
                     return false; // Invalid number
                 }
             }
             serde_json::Value::String(s) => Value::String(s.clone()),
-            serde_json::Value::Bool(b) => Value::Bool(*b),
+            serde_json::Value::Bool(b) => Value::Boolean(*b),
             serde_json::Value::Null => Value::Null,
             _ => return false, // Unsupported type
         };
         
         match (row_value, &filter_val, op) {
             // Equality operators
-            (Value::Int(a), Value::Int(b), "=" | "eq" | "==") => a == b,
-            (Value::Int(a), Value::Int(b), "!=" | "ne" | "<>") => a != b,
-            (Value::Float(a), Value::Float(b), "=" | "eq" | "==") => (a - b).abs() < f64::EPSILON,
-            (Value::Float(a), Value::Float(b), "!=" | "ne" | "<>") => (a - b).abs() >= f64::EPSILON,
+            (Value::Int64(a), Value::Int64(b), "=" | "eq" | "==") => a == b,
+            (Value::Int64(a), Value::Int64(b), "!=" | "ne" | "<>") => a != b,
+            (Value::Float64(a), Value::Float64(b), "=" | "eq" | "==") => (a - b).abs() < f64::EPSILON,
+            (Value::Float64(a), Value::Float64(b), "!=" | "ne" | "<>") => (a - b).abs() >= f64::EPSILON,
             (Value::String(a), Value::String(b), "=" | "eq" | "==") => a == b,
             (Value::String(a), Value::String(b), "!=" | "ne" | "<>") => a != b,
-            (Value::Bool(a), Value::Bool(b), "=" | "eq" | "==") => a == b,
-            (Value::Bool(a), Value::Bool(b), "!=" | "ne" | "<>") => a != b,
+            (Value::Boolean(a), Value::Boolean(b), "=" | "eq" | "==") => a == b,
+            (Value::Boolean(a), Value::Boolean(b), "!=" | "ne" | "<>") => a != b,
             
             // Comparison operators for numbers
-            (Value::Int(a), Value::Int(b), ">" | "gt") => a > b,
-            (Value::Int(a), Value::Int(b), ">=" | "gte" | "ge") => a >= b,
-            (Value::Int(a), Value::Int(b), "<" | "lt") => a < b,
-            (Value::Int(a), Value::Int(b), "<=" | "lte" | "le") => a <= b,
-            (Value::Float(a), Value::Float(b), ">" | "gt") => a > b,
-            (Value::Float(a), Value::Float(b), ">=" | "gte" | "ge") => a >= b,
-            (Value::Float(a), Value::Float(b), "<" | "lt") => a < b,
-            (Value::Float(a), Value::Float(b), "<=" | "lte" | "le") => a <= b,
+            (Value::Int64(a), Value::Int64(b), ">" | "gt") => a > b,
+            (Value::Int64(a), Value::Int64(b), ">=" | "gte" | "ge") => a >= b,
+            (Value::Int64(a), Value::Int64(b), "<" | "lt") => a < b,
+            (Value::Int64(a), Value::Int64(b), "<=" | "lte" | "le") => a <= b,
+            (Value::Float64(a), Value::Float64(b), ">" | "gt") => a > b,
+            (Value::Float64(a), Value::Float64(b), ">=" | "gte" | "ge") => a >= b,
+            (Value::Float64(a), Value::Float64(b), "<" | "lt") => a < b,
+            (Value::Float64(a), Value::Float64(b), "<=" | "lte" | "le") => a <= b,
             
             // String operators
             (Value::String(a), Value::String(b), "contains" | "like") => a.contains(b),
@@ -894,10 +894,10 @@ impl Pipeline {
             (_, _, "is_not_null" | "isNotNull") => true,
             
             // Type coercion for numeric comparisons
-            (Value::Int(a), Value::Float(b), op @ (">" | "gt" | ">=" | "gte" | "<" | "lt" | "<=" | "lte")) => {
-                Self::compare_values(&Value::Float(*a as f64), op, filter_value)
+            (Value::Int64(a), Value::Float64(b), op @ (">" | "gt" | ">=" | "gte" | "<" | "lt" | "<=" | "lte")) => {
+                Self::compare_values(&Value::Float64(*a as f64), op, filter_value)
             }
-            (Value::Float(a), Value::Int(b), op @ (">" | "gt" | ">=" | "gte" | "<" | "lt" | "<=" | "lte")) => {
+            (Value::Float64(a), Value::Int64(b), op @ (">" | "gt" | ">=" | "gte" | "<" | "lt" | "<=" | "lte")) => {
                 Self::compare_values(row_value, op, &serde_json::Value::Number(serde_json::Number::from_f64(*b as f64).unwrap()))
             }
             
@@ -917,14 +917,14 @@ impl Pipeline {
             if let Some(value) = row.get(column_idx) {
                 has_value = true;
                 match value {
-                    Value::Int(i) => {
+                    Value::Int64(i) => {
                         if has_float {
                             sum_float += *i as f64;
                         } else {
                             sum_int += i;
                         }
                     }
-                    Value::Float(f) => {
+                    Value::Float64(f) => {
                         if !has_float {
                             sum_float = sum_int as f64;
                             has_float = true;
@@ -941,9 +941,9 @@ impl Pipeline {
         }
         
         Some(if has_float {
-            Value::Float(sum_float)
+            Value::Float64(sum_float)
         } else {
-            Value::Int(sum_int)
+            Value::Int64(sum_int)
         })
     }
     
@@ -956,11 +956,11 @@ impl Pipeline {
         for row in rows {
             if let Some(value) = row.get(column_idx) {
                 match value {
-                    Value::Int(i) => {
+                    Value::Int64(i) => {
                         sum += *i as f64;
                         count += 1;
                     }
-                    Value::Float(f) => {
+                    Value::Float64(f) => {
                         sum += f;
                         count += 1;
                     }
@@ -973,7 +973,7 @@ impl Pipeline {
             return None;
         }
         
-        Some(Value::Float(sum / count as f64))
+        Some(Value::Float64(sum / count as f64))
     }
     
     /// Compute minimum value in a column
@@ -985,24 +985,24 @@ impl Pipeline {
             if let Some(value) = row.get(column_idx) {
                 match (min_value.as_ref(), value) {
                     (None, _) => min_value = Some(value.clone()),
-                    (Some(Value::Int(a)), Value::Int(b)) => {
+                    (Some(Value::Int64(a)), Value::Int64(b)) => {
                         if b < a {
-                            min_value = Some(Value::Int(*b));
+                            min_value = Some(Value::Int64(*b));
                         }
                     }
-                    (Some(Value::Float(a)), Value::Float(b)) => {
+                    (Some(Value::Float64(a)), Value::Float64(b)) => {
                         if b < a {
-                            min_value = Some(Value::Float(*b));
+                            min_value = Some(Value::Float64(*b));
                         }
                     }
-                    (Some(Value::Int(a)), Value::Float(b)) => {
+                    (Some(Value::Int64(a)), Value::Float64(b)) => {
                         if *b < *a as f64 {
-                            min_value = Some(Value::Float(*b));
+                            min_value = Some(Value::Float64(*b));
                         }
                     }
-                    (Some(Value::Float(a)), Value::Int(b)) => {
+                    (Some(Value::Float64(a)), Value::Int64(b)) => {
                         if (*b as f64) < *a {
-                            min_value = Some(Value::Int(*b));
+                            min_value = Some(Value::Int64(*b));
                         }
                     }
                     (Some(Value::String(a)), Value::String(b)) => {
@@ -1027,24 +1027,24 @@ impl Pipeline {
             if let Some(value) = row.get(column_idx) {
                 match (max_value.as_ref(), value) {
                     (None, _) => max_value = Some(value.clone()),
-                    (Some(Value::Int(a)), Value::Int(b)) => {
+                    (Some(Value::Int64(a)), Value::Int64(b)) => {
                         if b > a {
-                            max_value = Some(Value::Int(*b));
+                            max_value = Some(Value::Int64(*b));
                         }
                     }
-                    (Some(Value::Float(a)), Value::Float(b)) => {
+                    (Some(Value::Float64(a)), Value::Float64(b)) => {
                         if b > a {
-                            max_value = Some(Value::Float(*b));
+                            max_value = Some(Value::Float64(*b));
                         }
                     }
-                    (Some(Value::Int(a)), Value::Float(b)) => {
+                    (Some(Value::Int64(a)), Value::Float64(b)) => {
                         if *b > *a as f64 {
-                            max_value = Some(Value::Float(*b));
+                            max_value = Some(Value::Float64(*b));
                         }
                     }
-                    (Some(Value::Float(a)), Value::Int(b)) => {
+                    (Some(Value::Float64(a)), Value::Int64(b)) => {
                         if *b as f64 > *a {
-                            max_value = Some(Value::Int(*b));
+                            max_value = Some(Value::Int64(*b));
                         }
                     }
                     (Some(Value::String(a)), Value::String(b)) => {
@@ -1202,7 +1202,7 @@ impl Pipeline {
                             Self::compute_avg(&current_data, column_idx)
                         }
                         "count" => {
-                            Some(Value::Int(current_data.len() as i64))
+                            Some(Value::Int64(current_data.len() as i64))
                         }
                         "min" | "minimum" => {
                             Self::compute_min(&current_data, column_idx)
@@ -1556,28 +1556,28 @@ impl AdvancedQueryBuilder {
             let filter_value: Value = match &filter.value {
                 serde_json::Value::Number(n) => {
                     if n.is_i64() {
-                        Value::Int(n.as_i64().unwrap())
+                        Value::Int64(n.as_i64().unwrap())
                     } else if n.is_u64() {
-                        Value::Int(n.as_u64().unwrap() as i64)
+                        Value::Int64(n.as_u64().unwrap() as i64)
                     } else {
-                        Value::Float(n.as_f64().unwrap())
+                        Value::Float64(n.as_f64().unwrap())
                     }
                 }
                 serde_json::Value::String(s) => Value::String(s.clone()),
-                serde_json::Value::Bool(b) => Value::Bool(*b),
+                serde_json::Value::Bool(b) => Value::Boolean(*b),
                 serde_json::Value::Null => Value::Null,
                 _ => Value::String(format!("{}", filter.value)),
             };
             
             // Apply filter based on operation
             query_builder = match filter_op {
-                "eq" => query_builder.where(&filter.column).eq(filter_value),
-                "ne" | "neq" => query_builder.where(&filter.column).ne(filter_value),
-                "gt" => query_builder.where(&filter.column).gt(filter_value),
-                "gte" => query_builder.where(&filter.column).gte(filter_value),
-                "lt" => query_builder.where(&filter.column).lt(filter_value),
-                "lte" => query_builder.where(&filter.column).lte(filter_value),
-                "like" => query_builder.where(&filter.column).like(&format!("{}", filter.value)),
+                "eq" => query_builder.r#where(&filter.column).eq(filter_value),
+                "ne" | "neq" => query_builder.r#where(&filter.column).ne(filter_value),
+                "gt" => query_builder.r#where(&filter.column).gt(filter_value),
+                "gte" => query_builder.r#where(&filter.column).gte(filter_value),
+                "lt" => query_builder.r#where(&filter.column).lt(filter_value),
+                "lte" => query_builder.r#where(&filter.column).lte(filter_value),
+                "like" => query_builder.r#where(&filter.column).like(&format!("{}", filter.value)),
                 "in" => {
                     // For "in", we need to handle array values
                     if let serde_json::Value::Array(arr) = &filter.value {
@@ -1585,20 +1585,20 @@ impl AdvancedQueryBuilder {
                             match v {
                                 serde_json::Value::Number(n) => {
                                     if n.is_i64() {
-                                        Value::Int(n.as_i64().unwrap())
+                                        Value::Int64(n.as_i64().unwrap())
                                     } else {
-                                        Value::Float(n.as_f64().unwrap())
+                                        Value::Float64(n.as_f64().unwrap())
                                     }
                                 }
                                 serde_json::Value::String(s) => Value::String(s.clone()),
-                                serde_json::Value::Bool(b) => Value::Bool(*b),
+                                serde_json::Value::Bool(b) => Value::Boolean(*b),
                                 _ => Value::String(format!("{}", v)),
                             }
                         }).collect();
-                        query_builder.where(&filter.column).r#in(values)
+                        query_builder.r#where(&filter.column).r#in(values)
                     } else {
                         // Single value, treat as eq
-                        query_builder.where(&filter.column).eq(filter_value)
+                        query_builder.r#where(&filter.column).eq(filter_value)
                     }
                 }
                 _ => query_builder, // Skip unsupported operations
@@ -1818,9 +1818,132 @@ impl BulkOperations {
                                 Err(e) => Err(e),
                             }
                         }
-                        BulkOperation::Update { .. } | BulkOperation::Upsert { .. } => {
-                            // Update/Upsert not yet fully implemented
-                            Err(Error::Query("Update/Upsert operations in bulk not yet implemented".to_string()))
+                        BulkOperation::Update { table, updates } => {
+                            // EDGE CASE: Empty updates - return 0 updated
+                            if updates.is_empty() {
+                                return Ok(0);
+                            }
+                            
+                            // Get table ID
+                            let mut hasher = DefaultHasher::new();
+                            table.hash(&mut hasher);
+                            "narayana_table_salt_v1".hash(&mut hasher);
+                            let table_id = narayana_core::types::TableId(hasher.finish() as u64);
+                            
+                            // Group updates by row_id for efficient processing
+                            use std::collections::HashMap;
+                            let mut row_updates: HashMap<u64, HashMap<String, serde_json::Value>> = HashMap::new();
+                            for update in updates {
+                                row_updates
+                                    .entry(update.row_id)
+                                    .or_insert_with(HashMap::new)
+                                    .insert(update.column, update.value);
+                            }
+                            
+                            // Execute updates via connection
+                            let mut rows_updated = 0;
+                            let mut errors = Vec::new();
+                            
+                            for (row_id, columns) in row_updates {
+                                let update_query = serde_json::json!({
+                                    "operation": "update",
+                                    "table": table,
+                                    "table_id": table_id.0,
+                                    "row_id": row_id,
+                                    "updates": columns,
+                                });
+                                
+                                match conn.execute_query(update_query).await {
+                                    Ok(_) => rows_updated += 1,
+                                    Err(e) => errors.push(e.to_string()),
+                                }
+                            }
+                            
+                            if !errors.is_empty() && rows_updated == 0 {
+                                return Err(Error::Query(format!("All updates failed: {}", errors.join("; "))));
+                            }
+                            
+                            Ok(rows_updated)
+                        }
+                        BulkOperation::Upsert { table, rows } => {
+                            // EDGE CASE: Empty rows - return 0 upserted
+                            if rows.is_empty() {
+                                return Ok(0);
+                            }
+                            
+                            // Get table ID
+                            let mut hasher = DefaultHasher::new();
+                            table.hash(&mut hasher);
+                            "narayana_table_salt_v1".hash(&mut hasher);
+                            let table_id = narayana_core::types::TableId(hasher.finish() as u64);
+                            
+                            // Get schema to determine row structure
+                            let _schema = match conn.get_schema(table_id).await {
+                                Ok(s) => s,
+                                Err(e) => return Err(e),
+                            };
+                            
+                            // Execute upserts via connection
+                            let mut rows_upserted = 0;
+                            let mut errors = Vec::new();
+                            
+                            for row in rows {
+                                // Convert row to JSON values
+                                use crate::elegant::Value;
+                                let row_values: Vec<serde_json::Value> = row.values()
+                                    .iter()
+                                    .map(|v| match v {
+                                        Value::Int64(i) => serde_json::json!(*i),
+                                        Value::Float64(f) => serde_json::json!(*f),
+                                        Value::String(s) => serde_json::json!(s),
+                                        Value::Boolean(b) => serde_json::json!(*b),
+                                        Value::Null => serde_json::json!(null),
+                                        Value::Array(arr) => {
+                                            serde_json::Value::Array(arr.iter().map(|v| match v {
+                                                Value::Int64(i) => serde_json::json!(*i),
+                                                Value::Float64(f) => serde_json::json!(*f),
+                                                Value::String(s) => serde_json::json!(s),
+                                                Value::Boolean(b) => serde_json::json!(*b),
+                                                Value::Null => serde_json::json!(null),
+                                                Value::Array(_) => serde_json::json!(null), // Nested arrays not fully supported
+                                            }).collect())
+                                        },
+                                    })
+                                    .collect();
+                                
+                                // For upsert, we need row_id - assume first column is ID or use a generated ID
+                                // For now, use a hash of the row values as ID
+                                use std::collections::hash_map::DefaultHasher;
+                                use std::hash::{Hash, Hasher};
+                                let mut hasher = DefaultHasher::new();
+                                for val in &row_values {
+                                    // Hash the value
+                                    if let Ok(serialized) = serde_json::to_string(val) {
+                                        serialized.hash(&mut hasher);
+                                    }
+                                }
+                                let row_id = hasher.finish();
+                                
+                                // Convert row values to upsert format
+                                let upsert_query = serde_json::json!({
+                                    "operation": "upsert",
+                                    "table": table,
+                                    "table_id": table_id.0,
+                                    "row_id": row_id,
+                                    "row": row_values,
+                                });
+                                
+                                match conn.execute_query(upsert_query).await {
+                                    Ok(_) => rows_upserted += 1,
+                                    Err(e) => errors.push(e.to_string()),
+                                }
+                            }
+                            
+                            if !errors.is_empty() && rows_upserted == 0 {
+                                return Err(Error::Query(format!("All upserts failed: {}", errors.join("; "))));
+                            }
+                            
+                            Ok(rows_upserted)
                         }
                     }
                 });

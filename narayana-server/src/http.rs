@@ -6,7 +6,7 @@ use axum::{
     http::{Response, StatusCode, Uri, HeaderMap},
     middleware::Next,
     response::{IntoResponse, Json},
-    routing::{delete, get, post},
+    routing::{delete, get, post, MethodRouter},
     Router,
 };
 use narayana_storage::{
@@ -16,6 +16,7 @@ use narayana_storage::{
     webhooks::WebhookManager,
     workers::WorkerManager,
     cognitive::{CognitiveBrain, MemoryType, ThoughtState, CognitiveEventWithTimestamp, Conflict, MemoryAccessRecord},
+    vector_search::{VectorStore, VectorIndex, Embedding, IndexType, SearchResult},
 };
 use narayana_core::{schema::Schema, types::TableId, column::Column};
 use serde::{Deserialize, Serialize};
@@ -226,6 +227,8 @@ pub struct ApiState {
     pub token_manager: Arc<crate::security::TokenManager>,
     pub rate_limiter: Arc<crate::security::RateLimiter>, // For auth endpoints
     pub api_rate_limiter: Arc<crate::security::RateLimiter>, // For API endpoints
+    pub cpl_manager: Option<Arc<narayana_storage::cpl_manager::CPLManager>>, // CPL Manager
+    pub vector_store: Arc<VectorStore>, // Vector search store
 }
 
 // Statistics tracking
@@ -381,6 +384,12 @@ pub fn create_router(state: ApiState) -> Router {
         .route("/api/v1/brains/:brain_id/memory-accesses", get(get_memory_accesses_handler))
         .route("/api/v1/brains/:brain_id/thought-timeline", get(get_thought_timeline_handler))
         .route("/api/v1/brains/:brain_id/conflicts", get(get_conflicts_handler))
+        // CPL API
+        .route("/api/v1/cpls", get(get_cpls_handler).post(create_cpl_handler))
+        .route("/api/v1/cpls/:cpl_id/start", post(cpl_start_handler))
+        .route("/api/v1/cpls/:cpl_id/stop", post(cpl_stop_handler))
+        .route("/api/v1/cpls/:cpl_id", get(get_cpl_handler))
+        // .route("/api/v1/cpls/:cpl_id/delete", post(delete_cpl_handler))  // TODO: Enable when needed
         // Workers API
         .route("/api/v1/workers", get(get_workers_handler))
         // Webhooks API
@@ -389,6 +398,22 @@ pub fn create_router(state: ApiState) -> Router {
         .route("/api/v1/webhooks/:id/deliveries", get(get_webhook_deliveries_handler))
         .route("/api/v1/webhooks/:id/enable", post(enable_webhook_handler))
         .route("/api/v1/webhooks/:id/disable", post(disable_webhook_handler))
+        // Vector Search API
+        .route("/api/v1/vector/search", post(vector_search_handler))
+        .route("/api/v1/vector/:index/add", post(vector_add_handler))
+        .route("/api/v1/vector/:index/add_batch", post(vector_add_batch_handler))
+        // ML Operations API
+        .route("/api/v1/ml/train", post(ml_train_handler))
+        .route("/api/v1/ml/predict/:model_id", post(ml_predict_handler))
+        .route("/api/v1/ml/extract/:table", post(ml_extract_handler))
+        // Analytics Operations API
+        .route("/api/v1/analytics/window", post(analytics_window_handler))
+        .route("/api/v1/analytics/statistical", post(analytics_statistical_handler))
+        .route("/api/v1/analytics/timeseries", post(analytics_timeseries_handler))
+        .route("/api/v1/analytics/aggregate", post(analytics_aggregate_handler))
+        // Distributed Sync API
+        .route("/api/v1/sync/peer/:peer_id", post(sync_peer_handler))
+        .route("/api/v1/sync/status", get(sync_status_handler))
         // System stats
         .route("/api/v1/system/stats", get(get_system_stats_handler))
         // Schema and seeds management (public endpoints for CLI - no auth required)
@@ -406,16 +431,47 @@ pub fn create_router(state: ApiState) -> Router {
     // router = router.merge(worker_router); // Can't merge different state types
 
     // Add WebSocket route if WebSocket state is available
-    // Note: WebSocket handler uses its own state type, so we need to handle it differently
-    // For now, WebSocket is commented out until we can properly integrate the state
-    // if let Some(ws_state) = &state.ws_state {
-    //     use crate::websocket::{websocket_handler, WebSocketState};
-    //     // WebSocket handler requires Arc<WebSocketState>, not ApiState
-    //     // This needs to be handled at a higher level or we need to restructure
-    // }
-
-    // Combine public, auth, and protected routes
-    let router = public_routes.merge(auth_routes).merge(protected_routes);
+    // We need to create a wrapper handler that extracts ws_state from ApiState
+    let mut router = public_routes.merge(auth_routes).merge(protected_routes);
+    
+    if state.ws_state.is_some() {
+        use axum::extract::ws::WebSocketUpgrade;
+        use crate::websocket::{WsQueryParams, handle_socket};
+        use tracing::warn;
+        
+        // Create a wrapper handler that extracts ws_state from ApiState
+        router = router.route("/ws", axum::routing::get(
+            |ws: WebSocketUpgrade, query: Query<WsQueryParams>, State(api_state): State<ApiState>| async move {
+                // Extract ws_state from ApiState
+                if let Some(ws_state) = api_state.ws_state {
+                    // Manually implement the websocket handler logic
+                    // Validate token if provided
+                    let user_id = if let Some(token) = &query.token {
+                        // Verify token and extract user_id
+                        match ws_state.token_manager.verify_token(token) {
+                            Ok(claims) => Some(claims.sub),
+                            Err(e) => {
+                                warn!("Invalid WebSocket token: {}", e);
+                                None
+                            }
+                        }
+                    } else {
+                        None
+                    };
+                    
+                    // Upgrade the connection
+                    ws.on_upgrade(move |socket| handle_socket(socket, ws_state, user_id))
+                } else {
+                    // Return error if ws_state is not available
+                    axum::response::Response::builder()
+                        .status(StatusCode::SERVICE_UNAVAILABLE)
+                        .body(Body::from("WebSocket service not available"))
+                        .unwrap()
+                        .into_response()
+                }
+            }
+        ));
+    }
     
     router
         // Static files (UI) - catch all
@@ -2205,6 +2261,32 @@ async fn query_data_handler(
             };
             TOTAL_QUERY_TIME_MS.fetch_add(query_time_ms_u64, Ordering::Relaxed);
             
+            // Broadcast query event via WebSocket
+            if let Some(ws_state) = &state.ws_state {
+                use serde_json::json;
+                let query_event = json!({
+                    "type": "query",
+                    "duration_ms": query_time_ms_u64,
+                    "latency": query_time_ms_u64,
+                    "rows_read": row_count_u64,
+                    "table_id": id,
+                    "columns_requested": column_indices.len(),
+                });
+                
+                let message = narayana_api::websocket::WsMessage::event_with_timestamp(
+                    "system:queries".to_string(),
+                    query_event,
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                );
+                
+                if message.to_json().is_ok() {
+                    ws_state.manager.broadcast_to_channel(&"system:queries".to_string(), message);
+                }
+            }
+            
             // Convert columns to JSON - Column already implements Serialize
             let json_columns: Vec<serde_json::Value> = columns
                 .iter()
@@ -2962,6 +3044,217 @@ async fn get_system_stats_handler(State(state): State<ApiState>) -> impl IntoRes
     })).into_response()
 }
 
+// CPL API handlers
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CreateCPLRequest {
+    config: Option<CPLConfigRequest>,
+    brain_id: Option<String>, // Optional: use existing brain or create new
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CPLConfigRequest {
+    loop_interval_ms: Option<u64>,
+    enable_global_workspace: Option<bool>,
+    enable_background_daemon: Option<bool>,
+    enable_dreaming: Option<bool>,
+    working_memory_capacity: Option<usize>,
+    enable_attention: Option<bool>,
+    enable_narrative: Option<bool>,
+    enable_memory_bridge: Option<bool>,
+    enable_persistence: Option<bool>,
+    persistence_dir: Option<String>,
+    enable_genetics: Option<bool>,
+    genetic_mutation_rate: Option<f64>,
+    evolution_frequency: Option<u64>,
+    trait_environmental_weight: Option<f64>,
+    enable_talking_cricket: Option<bool>,
+    talking_cricket_llm_enabled: Option<bool>,
+    talking_cricket_veto_threshold: Option<f64>,
+    talking_cricket_evolution_frequency: Option<u64>,
+    // Avatar configuration
+    enable_avatar: Option<bool>,
+    avatar_config: Option<serde_json::Value>,
+    // Speech configuration
+    enable_speech: Option<bool>,
+    speech_config: Option<serde_json::Value>,
+    // Audio configuration
+    enable_audio: Option<bool>,
+    audio_config: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize)]
+struct CreateCPLResponse {
+    success: bool,
+    cpl_id: String,
+    message: String,
+}
+
+#[derive(Debug, Serialize)]
+struct CPLInfo {
+    cpl_id: String,
+    is_running: bool,
+    config: serde_json::Value,
+}
+
+#[derive(Debug, Serialize)]
+struct GetCPLsResponse {
+    cpls: Vec<CPLInfo>,
+    count: usize,
+}
+
+/// Get all CPL instances
+async fn get_cpls_handler(State(state): State<ApiState>) -> impl IntoResponse {
+    if let Some(ref cpl_manager) = state.cpl_manager {
+        let cpl_ids = cpl_manager.list_cpls();
+        let mut cpls = Vec::new();
+        
+        for cpl_id in cpl_ids {
+            if let Some(cpl) = cpl_manager.get_cpl(&cpl_id) {
+                let is_running = cpl.is_running();
+                // Get config from CPL
+                let config = serde_json::to_value(cpl.config()).unwrap_or_else(|_| serde_json::json!({}));
+                cpls.push(CPLInfo {
+                    cpl_id,
+                    is_running,
+                    config,
+                });
+            }
+        }
+        
+        let count = cpls.len();
+        (StatusCode::OK, Json(GetCPLsResponse {
+            cpls,
+            count,
+        })).into_response()
+    } else {
+        (StatusCode::SERVICE_UNAVAILABLE, Json(ErrorResponse {
+            error: "CPL Manager not available".to_string(),
+            code: "CPL_MANAGER_UNAVAILABLE".to_string(),
+        })).into_response()
+    }
+}
+
+/// Create a new CPL instance
+async fn create_cpl_handler(
+    State(state): State<ApiState>,
+    Json(request): Json<CreateCPLRequest>,
+) -> impl IntoResponse {
+    if let Some(ref cpl_manager) = state.cpl_manager {
+        use narayana_storage::conscience_persistent_loop::CPLConfig;
+        
+        let mut config = CPLConfig::default();
+        if let Some(config_req) = request.config {
+            if let Some(v) = config_req.loop_interval_ms { config.loop_interval_ms = v; }
+            if let Some(v) = config_req.enable_global_workspace { config.enable_global_workspace = v; }
+            if let Some(v) = config_req.enable_background_daemon { config.enable_background_daemon = v; }
+            if let Some(v) = config_req.enable_dreaming { config.enable_dreaming = v; }
+            if let Some(v) = config_req.working_memory_capacity { config.working_memory_capacity = v; }
+            if let Some(v) = config_req.enable_attention { config.enable_attention = v; }
+            if let Some(v) = config_req.enable_narrative { config.enable_narrative = v; }
+            if let Some(v) = config_req.enable_memory_bridge { config.enable_memory_bridge = v; }
+            if let Some(v) = config_req.enable_persistence { config.enable_persistence = v; }
+            if config_req.persistence_dir.is_some() { config.persistence_dir = config_req.persistence_dir; }
+            if let Some(v) = config_req.enable_genetics { config.enable_genetics = v; }
+            if let Some(v) = config_req.genetic_mutation_rate { config.genetic_mutation_rate = v; }
+            if let Some(v) = config_req.evolution_frequency { config.evolution_frequency = v; }
+            if let Some(v) = config_req.trait_environmental_weight { config.trait_environmental_weight = v; }
+            if let Some(v) = config_req.enable_talking_cricket { config.enable_talking_cricket = v; }
+            if let Some(v) = config_req.talking_cricket_llm_enabled { config.talking_cricket_llm_enabled = v; }
+            if let Some(v) = config_req.talking_cricket_veto_threshold { config.talking_cricket_veto_threshold = v; }
+            if let Some(v) = config_req.talking_cricket_evolution_frequency { config.talking_cricket_evolution_frequency = v; }
+            // Avatar configuration
+            if let Some(v) = config_req.enable_avatar { config.enable_avatar = v; }
+            if config_req.avatar_config.is_some() { config.avatar_config = config_req.avatar_config; }
+            // Speech configuration
+            if let Some(v) = config_req.enable_speech { config.enable_speech = v; }
+            if config_req.speech_config.is_some() { config.speech_config = config_req.speech_config; }
+            // Audio configuration
+            if let Some(v) = config_req.enable_audio { config.enable_audio = v; }
+            if config_req.audio_config.is_some() { config.audio_config = config_req.audio_config; }
+        }
+        
+        match cpl_manager.spawn_cpl(Some(config)).await {
+            Ok(cpl_id) => {
+                let cpl_id_clone = cpl_id.clone();
+                (StatusCode::OK, Json(CreateCPLResponse {
+                    success: true,
+                    cpl_id,
+                    message: format!("CPL {} created successfully", cpl_id_clone),
+                })).into_response()
+            }
+            Err(e) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
+                    error: format!("Failed to create CPL: {}", e),
+                    code: "CPL_CREATE_ERROR".to_string(),
+                })).into_response()
+            }
+        }
+    } else {
+        (StatusCode::SERVICE_UNAVAILABLE, Json(ErrorResponse {
+            error: "CPL Manager not available".to_string(),
+            code: "CPL_MANAGER_UNAVAILABLE".to_string(),
+        })).into_response()
+    }
+}
+
+/// Get a specific CPL instance
+async fn get_cpl_handler(
+    State(state): State<ApiState>,
+    Path(cpl_id): Path<String>,
+) -> impl IntoResponse {
+    if let Some(ref cpl_manager) = state.cpl_manager {
+        if let Some(cpl) = cpl_manager.get_cpl(&cpl_id) {
+            let is_running = cpl.is_running();
+            let config = serde_json::to_value(cpl.config()).unwrap_or_else(|_| serde_json::json!({}));
+            (StatusCode::OK, Json(CPLInfo {
+                cpl_id,
+                is_running,
+                config,
+            })).into_response()
+        } else {
+            (StatusCode::NOT_FOUND, Json(ErrorResponse {
+                error: format!("CPL {} not found", cpl_id),
+                code: "CPL_NOT_FOUND".to_string(),
+            })).into_response()
+        }
+    } else {
+        (StatusCode::SERVICE_UNAVAILABLE, Json(ErrorResponse {
+            error: "CPL Manager not available".to_string(),
+            code: "CPL_MANAGER_UNAVAILABLE".to_string(),
+        })).into_response()
+    }
+}
+
+
+/// Delete a CPL instance
+async fn delete_cpl_handler(
+    State(state): State<ApiState>,
+    Path(cpl_id): Path<String>,
+) -> impl IntoResponse {
+    if let Some(ref cpl_manager) = state.cpl_manager {
+        match cpl_manager.remove_cpl(&cpl_id).await {
+            Ok(_) => {
+                (StatusCode::OK, Json(serde_json::json!({
+                    "success": true,
+                    "message": format!("CPL {} deleted", cpl_id),
+                }))).into_response()
+            }
+            Err(e) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
+                    error: format!("Failed to delete CPL: {}", e),
+                    code: "CPL_DELETE_ERROR".to_string(),
+                })).into_response()
+            }
+        }
+    } else {
+        (StatusCode::SERVICE_UNAVAILABLE, Json(ErrorResponse {
+            error: "CPL Manager not available".to_string(),
+            code: "CPL_MANAGER_UNAVAILABLE".to_string(),
+        })).into_response()
+    }
+}
+
 // Webhook API handlers
 
 #[derive(Debug, Serialize)]
@@ -3346,6 +3639,148 @@ async fn get_webhook_deliveries_handler(
     })).into_response()
 }
 
+/// Start a CPL instance
+async fn cpl_start_handler(
+    State(state): State<ApiState>,
+    Path(cpl_id): Path<String>,
+) -> impl IntoResponse {
+    // SECURITY: Validate CPL ID
+    // EDGE CASE: Handle empty, whitespace-only, unicode, control characters
+    let trimmed_id = cpl_id.trim();
+    
+    if trimmed_id.is_empty() {
+        let response = Json(ErrorResponse {
+            error: "CPL ID cannot be empty or whitespace only".to_string(),
+            code: "INVALID_CPL_ID".to_string(),
+        });
+        return (StatusCode::BAD_REQUEST, response).into_response();
+    }
+    
+    if trimmed_id.len() > 255 {
+        let response = Json(ErrorResponse {
+            error: "CPL ID too long (max 255 characters)".to_string(),
+            code: "INVALID_CPL_ID".to_string(),
+        });
+        return (StatusCode::BAD_REQUEST, response).into_response();
+    }
+    
+    // EDGE CASE: Check byte length (prevent unicode abuse)
+    if trimmed_id.as_bytes().len() > 255 {
+        let response = Json(ErrorResponse {
+            error: "CPL ID byte length exceeds maximum".to_string(),
+            code: "INVALID_CPL_ID".to_string(),
+        });
+        return (StatusCode::BAD_REQUEST, response).into_response();
+    }
+    
+    // EDGE CASE: Check for control characters and path traversal (allow UUIDs with hyphens)
+    if trimmed_id.chars().any(|c| c.is_control() || c == '\0' || c == '/' || c == '\\') {
+        let response = Json(ErrorResponse {
+            error: "CPL ID contains invalid characters".to_string(),
+            code: "INVALID_CPL_ID".to_string(),
+        });
+        return (StatusCode::BAD_REQUEST, response).into_response();
+    }
+    
+    info!("Starting CPL: {}", cpl_id);
+    
+    if let Some(ref cpl_manager) = state.cpl_manager {
+        match cpl_manager.start_cpl(trimmed_id).await {
+            Ok(_) => {
+                (StatusCode::OK, Json(serde_json::json!({
+                    "success": true,
+                    "message": format!("CPL {} started", trimmed_id),
+                }))).into_response()
+            }
+            Err(e) => {
+                error!("Failed to start CPL: {}", e);
+                let response = Json(ErrorResponse {
+                    error: sanitize_error_message(&format!("Failed to start CPL: {}", e), "CPL_START_ERROR"),
+                    code: "CPL_START_ERROR".to_string(),
+                });
+                (StatusCode::INTERNAL_SERVER_ERROR, response).into_response()
+            }
+        }
+    } else {
+        let response = Json(ErrorResponse {
+            error: "CPL Manager not available".to_string(),
+            code: "CPL_MANAGER_UNAVAILABLE".to_string(),
+        });
+        (StatusCode::SERVICE_UNAVAILABLE, response).into_response()
+    }
+}
+
+/// Stop a CPL instance
+async fn cpl_stop_handler(
+    State(state): State<ApiState>,
+    Path(cpl_id): Path<String>,
+) -> impl IntoResponse {
+    // SECURITY: Validate CPL ID
+    // EDGE CASE: Handle empty, whitespace-only, unicode, control characters
+    let trimmed_id = cpl_id.trim();
+    
+    if trimmed_id.is_empty() {
+        let response = Json(ErrorResponse {
+            error: "CPL ID cannot be empty or whitespace only".to_string(),
+            code: "INVALID_CPL_ID".to_string(),
+        });
+        return (StatusCode::BAD_REQUEST, response).into_response();
+    }
+    
+    if trimmed_id.len() > 255 {
+        let response = Json(ErrorResponse {
+            error: "CPL ID too long (max 255 characters)".to_string(),
+            code: "INVALID_CPL_ID".to_string(),
+        });
+        return (StatusCode::BAD_REQUEST, response).into_response();
+    }
+    
+    // EDGE CASE: Check byte length (prevent unicode abuse)
+    if trimmed_id.as_bytes().len() > 255 {
+        let response = Json(ErrorResponse {
+            error: "CPL ID byte length exceeds maximum".to_string(),
+            code: "INVALID_CPL_ID".to_string(),
+        });
+        return (StatusCode::BAD_REQUEST, response).into_response();
+    }
+    
+    // EDGE CASE: Check for control characters and path traversal (allow UUIDs with hyphens)
+    if trimmed_id.chars().any(|c| c.is_control() || c == '\0' || c == '/' || c == '\\') {
+        let response = Json(ErrorResponse {
+            error: "CPL ID contains invalid characters".to_string(),
+            code: "INVALID_CPL_ID".to_string(),
+        });
+        return (StatusCode::BAD_REQUEST, response).into_response();
+    }
+    
+    info!("Stopping CPL: {}", cpl_id);
+    
+    if let Some(ref cpl_manager) = state.cpl_manager {
+        match cpl_manager.stop_cpl(trimmed_id).await {
+            Ok(_) => {
+                (StatusCode::OK, Json(serde_json::json!({
+                    "success": true,
+                    "message": format!("CPL {} stopped", trimmed_id),
+                }))).into_response()
+            }
+            Err(e) => {
+                error!("Failed to stop CPL: {}", e);
+                let response = Json(ErrorResponse {
+                    error: sanitize_error_message(&format!("Failed to stop CPL: {}", e), "CPL_STOP_ERROR"),
+                    code: "CPL_STOP_ERROR".to_string(),
+                });
+                (StatusCode::INTERNAL_SERVER_ERROR, response).into_response()
+            }
+        }
+    } else {
+        let response = Json(ErrorResponse {
+            error: "CPL Manager not available".to_string(),
+            code: "CPL_MANAGER_UNAVAILABLE".to_string(),
+        });
+        (StatusCode::SERVICE_UNAVAILABLE, response).into_response()
+    }
+}
+
 /// Enable a webhook
 async fn enable_webhook_handler(
     State(state): State<ApiState>,
@@ -3638,4 +4073,553 @@ async fn spawn_schema_handler(State(state): State<ApiState>) -> impl IntoRespons
             (StatusCode::INTERNAL_SERVER_ERROR, response).into_response()
         }
     }
+}
+
+// ============================================================================
+// Vector Search Handlers
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+struct VectorSearchRequest {
+    index: String,
+    vector: Vec<f32>,
+    k: usize,
+    filters: Option<HashMap<String, serde_json::Value>>,
+}
+
+#[derive(Debug, Serialize)]
+struct VectorSearchResponse {
+    results: Vec<VectorSearchResult>,
+}
+
+#[derive(Debug, Serialize)]
+struct VectorSearchResult {
+    id: u64,
+    similarity: f32,
+    metadata: HashMap<String, serde_json::Value>,
+}
+
+/// Vector search handler
+async fn vector_search_handler(
+    State(state): State<ApiState>,
+    Json(request): Json<VectorSearchRequest>,
+) -> impl IntoResponse {
+    // Validate request
+    if request.vector.is_empty() {
+        let response = Json(ErrorResponse {
+            error: "Vector cannot be empty".to_string(),
+            code: "INVALID_VECTOR".to_string(),
+        });
+        return (StatusCode::BAD_REQUEST, response).into_response();
+    }
+
+    if request.k == 0 {
+        let response = Json(ErrorResponse {
+            error: "k must be greater than 0".to_string(),
+            code: "INVALID_K".to_string(),
+        });
+        return (StatusCode::BAD_REQUEST, response).into_response();
+    }
+
+    // Perform search
+    match state.vector_store.search(&request.index, &request.vector, request.k.min(10000)) {
+        Ok(results) => {
+            let search_results: Vec<VectorSearchResult> = results
+                .iter()
+                .map(|r| VectorSearchResult {
+                    id: r.id,
+                    similarity: r.similarity,
+                    metadata: r.embedding.metadata.clone(),
+                })
+                .collect();
+
+            // Apply metadata filters if provided
+            let filtered_results = if let Some(filters) = request.filters {
+                search_results
+                    .into_iter()
+                    .filter(|result| {
+                        filters.iter().all(|(key, value)| {
+                            result.metadata.get(key) == Some(value)
+                        })
+                    })
+                    .collect()
+            } else {
+                search_results
+            };
+
+            (StatusCode::OK, Json(VectorSearchResponse {
+                results: filtered_results,
+            })).into_response()
+        }
+        Err(e) => {
+            error!("Vector search failed: {}", e);
+            let response = Json(ErrorResponse {
+                error: format!("Vector search failed: {}", e),
+                code: "SEARCH_ERROR".to_string(),
+            });
+            (StatusCode::INTERNAL_SERVER_ERROR, response).into_response()
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct VectorAddRequest {
+    id: u64,
+    vector: Vec<f32>,
+    metadata: Option<HashMap<String, serde_json::Value>>,
+}
+
+#[derive(Debug, Serialize)]
+struct VectorAddResponse {
+    success: bool,
+    message: String,
+}
+
+/// Vector add handler
+async fn vector_add_handler(
+    State(state): State<ApiState>,
+    Path(index): Path<String>,
+    Json(request): Json<VectorAddRequest>,
+) -> impl IntoResponse {
+    // Validate request
+    if request.vector.is_empty() {
+        let response = Json(ErrorResponse {
+            error: "Vector cannot be empty".to_string(),
+            code: "INVALID_VECTOR".to_string(),
+        });
+        return (StatusCode::BAD_REQUEST, response).into_response();
+    }
+
+    // Create embedding
+    let embedding = Embedding {
+        id: request.id,
+        vector: request.vector,
+        metadata: request.metadata.unwrap_or_default(),
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64,
+    };
+
+    // Add to index (create index if it doesn't exist)
+    match state.vector_store.add_embedding(&index, embedding.clone()) {
+        Ok(_) => {
+            (StatusCode::OK, Json(VectorAddResponse {
+                success: true,
+                message: format!("Vector added to index '{}'", index),
+            })).into_response()
+        }
+        Err(e) => {
+            // If index doesn't exist, create it and try again
+            if e.to_string().contains("not found") || e.to_string().contains("Index") {
+                state.vector_store.create_index(
+                    index.clone(),
+                    embedding.vector.len(),
+                    IndexType::Flat,
+                );
+                match state.vector_store.add_embedding(&index, embedding) {
+                    Ok(_) => {
+                        (StatusCode::OK, Json(VectorAddResponse {
+                            success: true,
+                            message: format!("Vector added to index '{}'", index),
+                        })).into_response()
+                    }
+                    Err(e2) => {
+                        error!("Failed to add vector: {}", e2);
+                        let response = Json(ErrorResponse {
+                            error: format!("Failed to add vector: {}", e2),
+                            code: "ADD_ERROR".to_string(),
+                        });
+                        (StatusCode::INTERNAL_SERVER_ERROR, response).into_response()
+                    }
+                }
+            } else {
+                error!("Failed to add vector: {}", e);
+                let response = Json(ErrorResponse {
+                    error: format!("Failed to add vector: {}", e),
+                    code: "ADD_ERROR".to_string(),
+                });
+                (StatusCode::INTERNAL_SERVER_ERROR, response).into_response()
+            }
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct VectorAddBatchRequest {
+    vectors: Vec<VectorAddRequest>,
+}
+
+#[derive(Debug, Serialize)]
+struct VectorAddBatchResponse {
+    success: bool,
+    added: usize,
+    message: String,
+}
+
+/// Vector batch add handler
+async fn vector_add_batch_handler(
+    State(state): State<ApiState>,
+    Path(index): Path<String>,
+    Json(request): Json<VectorAddBatchRequest>,
+) -> impl IntoResponse {
+    // Validate batch size
+    if request.vectors.is_empty() {
+        let response = Json(ErrorResponse {
+            error: "Batch cannot be empty".to_string(),
+            code: "INVALID_BATCH".to_string(),
+        });
+        return (StatusCode::BAD_REQUEST, response).into_response();
+    }
+
+    const MAX_BATCH_SIZE: usize = 10000;
+    if request.vectors.len() > MAX_BATCH_SIZE {
+        let response = Json(ErrorResponse {
+            error: format!("Batch size {} exceeds maximum {}", request.vectors.len(), MAX_BATCH_SIZE),
+            code: "BATCH_TOO_LARGE".to_string(),
+        });
+        return (StatusCode::BAD_REQUEST, response).into_response();
+    }
+
+    // Determine dimension from first vector
+    let dimension = match request.vectors.first() {
+        Some(v) if !v.vector.is_empty() => v.vector.len(),
+        _ => {
+            let response = Json(ErrorResponse {
+                error: "First vector is empty".to_string(),
+                code: "INVALID_VECTOR".to_string(),
+            });
+            return (StatusCode::BAD_REQUEST, response).into_response();
+        }
+    };
+
+    // Create index if it doesn't exist (try adding first vector to check)
+    let first_embedding = Embedding {
+        id: request.vectors[0].id,
+        vector: request.vectors[0].vector.clone(),
+        metadata: request.vectors[0].metadata.clone().unwrap_or_default(),
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64,
+    };
+
+    // Try to add first vector - if it fails with "not found", create index
+    if state.vector_store.add_embedding(&index, first_embedding.clone()).is_err() {
+        state.vector_store.create_index(
+            index.clone(),
+            dimension,
+            IndexType::Flat,
+        );
+    }
+
+    // Add all vectors
+    let mut added = 0;
+    let mut errors = Vec::new();
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    for vec_req in request.vectors {
+        if vec_req.vector.len() != dimension {
+            errors.push(format!("Vector id {} has dimension {} but expected {}", vec_req.id, vec_req.vector.len(), dimension));
+            continue;
+        }
+
+        let embedding = Embedding {
+            id: vec_req.id,
+            vector: vec_req.vector,
+            metadata: vec_req.metadata.unwrap_or_default(),
+            timestamp,
+        };
+
+        match state.vector_store.add_embedding(&index, embedding) {
+            Ok(_) => added += 1,
+            Err(e) => errors.push(format!("Failed to add vector {}: {}", vec_req.id, e)),
+        }
+    }
+
+    if added == 0 && !errors.is_empty() {
+        let response = Json(ErrorResponse {
+            error: format!("Failed to add any vectors: {}", errors.join("; ")),
+            code: "BATCH_ADD_ERROR".to_string(),
+        });
+        return (StatusCode::INTERNAL_SERVER_ERROR, response).into_response();
+    }
+
+    (StatusCode::OK, Json(VectorAddBatchResponse {
+        success: true,
+        added,
+        message: if errors.is_empty() {
+            format!("Added {} vectors to index '{}'", added, index)
+        } else {
+            format!("Added {} vectors to index '{}', {} errors: {}", added, index, errors.len(), errors.join("; "))
+        },
+    })).into_response()
+}
+
+// ============================================================================
+// ML Operations Handlers
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+struct MLTrainRequest {
+    model_type: String,
+    training_data: Option<String>,
+    params: Option<HashMap<String, serde_json::Value>>,
+}
+
+#[derive(Debug, Serialize)]
+struct MLTrainResponse {
+    success: bool,
+    model_id: Option<String>,
+    message: String,
+}
+
+/// ML train handler
+async fn ml_train_handler(
+    State(_state): State<ApiState>,
+    Json(request): Json<MLTrainRequest>,
+) -> impl IntoResponse {
+    // For now, ML training is not fully implemented on the server side
+    // Return a response indicating it's not available
+    // In production, this would interface with an ML runtime
+    warn!("ML training requested but not fully implemented: model_type={}", request.model_type);
+    
+    let response = Json(MLTrainResponse {
+        success: false,
+        model_id: None,
+        message: format!("ML training not yet fully implemented. Model type '{}' requires ML runtime integration.", request.model_type),
+    });
+    (StatusCode::NOT_IMPLEMENTED, response).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+struct MLPredictRequest {
+    input: serde_json::Value,
+}
+
+#[derive(Debug, Serialize)]
+struct MLPredictResponse {
+    success: bool,
+    prediction: Option<serde_json::Value>,
+    message: String,
+}
+
+/// ML predict handler
+async fn ml_predict_handler(
+    State(_state): State<ApiState>,
+    Path(model_id): Path<String>,
+    Json(request): Json<MLPredictRequest>,
+) -> impl IntoResponse {
+    // For now, ML prediction is not fully implemented on the server side
+    warn!("ML prediction requested but not fully implemented: model_id={}", model_id);
+    
+    let response = Json(MLPredictResponse {
+        success: false,
+        prediction: None,
+        message: format!("ML prediction not yet fully implemented. Model '{}' requires ML runtime integration.", model_id),
+    });
+    (StatusCode::NOT_IMPLEMENTED, response).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+struct MLExtractRequest {
+    columns: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize)]
+struct MLExtractResponse {
+    success: bool,
+    features: Option<Vec<Vec<f32>>>,
+    message: String,
+}
+
+/// ML feature extraction handler
+async fn ml_extract_handler(
+    State(_state): State<ApiState>,
+    Path(table): Path<String>,
+    Json(request): Json<MLExtractRequest>,
+) -> impl IntoResponse {
+    // For now, feature extraction is not fully implemented on the server side
+    warn!("ML feature extraction requested but not fully implemented: table={}", table);
+    
+    let response = Json(MLExtractResponse {
+        success: false,
+        features: None,
+        message: format!("Feature extraction not yet fully implemented. Table '{}' requires ML runtime integration.", table),
+    });
+    (StatusCode::NOT_IMPLEMENTED, response).into_response()
+}
+
+// ============================================================================
+// Analytics Operations Handlers
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+struct AnalyticsWindowRequest {
+    table: String,
+    function: String,
+    partition_by: Option<Vec<String>>,
+    order_by: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize)]
+struct AnalyticsWindowResponse {
+    success: bool,
+    results: Option<Vec<serde_json::Value>>,
+    message: String,
+}
+
+/// Analytics window function handler
+async fn analytics_window_handler(
+    State(_state): State<ApiState>,
+    Json(request): Json<AnalyticsWindowRequest>,
+) -> impl IntoResponse {
+    warn!("Analytics window function requested but not fully implemented: table={}, function={}", request.table, request.function);
+    
+    let response = Json(AnalyticsWindowResponse {
+        success: false,
+        results: None,
+        message: format!("Window functions not yet fully implemented. Table '{}' requires query executor integration.", request.table),
+    });
+    (StatusCode::NOT_IMPLEMENTED, response).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+struct AnalyticsStatisticalRequest {
+    table: String,
+    function: String,
+    column: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct AnalyticsStatisticalResponse {
+    success: bool,
+    result: Option<f64>,
+    message: String,
+}
+
+/// Analytics statistical function handler
+async fn analytics_statistical_handler(
+    State(_state): State<ApiState>,
+    Json(request): Json<AnalyticsStatisticalRequest>,
+) -> impl IntoResponse {
+    warn!("Analytics statistical function requested but not fully implemented: table={}, function={}", request.table, request.function);
+    
+    let response = Json(AnalyticsStatisticalResponse {
+        success: false,
+        result: None,
+        message: format!("Statistical functions not yet fully implemented. Table '{}' requires query executor integration.", request.table),
+    });
+    (StatusCode::NOT_IMPLEMENTED, response).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+struct AnalyticsTimeSeriesRequest {
+    table: String,
+    time_column: String,
+    value_column: String,
+    analysis_type: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct AnalyticsTimeSeriesResponse {
+    success: bool,
+    results: Option<Vec<serde_json::Value>>,
+    message: String,
+}
+
+/// Analytics time series handler
+async fn analytics_timeseries_handler(
+    State(_state): State<ApiState>,
+    Json(request): Json<AnalyticsTimeSeriesRequest>,
+) -> impl IntoResponse {
+    warn!("Analytics time series requested but not fully implemented: table={}", request.table);
+    
+    let response = Json(AnalyticsTimeSeriesResponse {
+        success: false,
+        results: None,
+        message: format!("Time series analysis not yet fully implemented. Table '{}' requires query executor integration.", request.table),
+    });
+    (StatusCode::NOT_IMPLEMENTED, response).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+struct AnalyticsAggregateRequest {
+    table: String,
+    aggregations: Vec<serde_json::Value>,
+    group_by: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize)]
+struct AnalyticsAggregateResponse {
+    success: bool,
+    results: Option<Vec<serde_json::Value>>,
+    message: String,
+}
+
+/// Analytics aggregation handler
+async fn analytics_aggregate_handler(
+    State(_state): State<ApiState>,
+    Json(request): Json<AnalyticsAggregateRequest>,
+) -> impl IntoResponse {
+    warn!("Analytics aggregation requested but not fully implemented: table={}", request.table);
+    
+    let response = Json(AnalyticsAggregateResponse {
+        success: false,
+        results: None,
+        message: format!("Advanced aggregations not yet fully implemented. Table '{}' requires query executor integration.", request.table),
+    });
+    (StatusCode::NOT_IMPLEMENTED, response).into_response()
+}
+
+
+#[derive(Debug, Deserialize)]
+struct SyncPeerRequest {
+    peer_id: String,
+    data: serde_json::Value,
+}
+
+#[derive(Debug, Serialize)]
+struct SyncPeerResponse {
+    success: bool,
+    message: String,
+}
+
+/// Sync peer handler
+async fn sync_peer_handler(
+    Path(peer_id): Path<String>,
+    State(_state): State<ApiState>,
+    Json(_request): Json<SyncPeerRequest>,
+) -> impl IntoResponse {
+    warn!("Sync peer handler called for peer_id={}", peer_id);
+    
+    let response = Json(SyncPeerResponse {
+        success: false,
+        message: format!("Sync peer functionality not yet fully implemented for peer '{}'", peer_id),
+    });
+    (StatusCode::NOT_IMPLEMENTED, response).into_response()
+}
+
+#[derive(Debug, Serialize)]
+struct SyncStatusResponse {
+    success: bool,
+    status: Option<serde_json::Value>,
+    message: String,
+}
+
+/// Sync status handler
+async fn sync_status_handler(
+    State(_state): State<ApiState>,
+) -> impl IntoResponse {
+    warn!("Sync status handler called");
+    
+    let response = Json(SyncStatusResponse {
+        success: false,
+        status: None,
+        message: "Sync status functionality not yet fully implemented".to_string(),
+    });
+    (StatusCode::NOT_IMPLEMENTED, response).into_response()
 }

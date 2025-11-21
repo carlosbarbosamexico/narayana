@@ -21,6 +21,9 @@ mod rl_tests {
             context: HashMap::new(),
             patterns: Vec::new(),
             embedding: None,
+            complexity: Some(0.5),
+            entropy: Some(0.5),
+            modality: Some("visual".to_string()),
         }
     }
 

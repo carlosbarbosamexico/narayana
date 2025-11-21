@@ -7,12 +7,17 @@ import Login from './pages/Login'
 import Signup from './pages/Signup'
 import Dashboard from './pages/Dashboard'
 import Tables from './pages/Tables'
+import TableDetail from './pages/TableDetail'
 import Brains from './pages/Brains'
+import BrainDetail from './pages/BrainDetail'
+import CPLs from './pages/CPLs'
+import CPLAvatarView from './pages/CPLAvatarView'
 import Workers from './pages/Workers'
 import Webhooks from './pages/Webhooks'
 import Query from './pages/Query'
 import Performance from './pages/Performance'
 import Settings from './pages/Settings'
+import DeveloperHub from './pages/DeveloperHub'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -27,11 +32,25 @@ const queryClient = new QueryClient({
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <BrowserRouter
+        future={{
+          v7_startTransition: true,
+          v7_relativeSplatPath: true,
+        }}
+      >
         <SetupGuard>
           <Routes>
             <Route path="/signup" element={<Signup />} />
             <Route path="/login" element={<Login />} />
+            {/* Avatar view can be standalone (no layout) */}
+            <Route
+              path="/cpls/:cplId/avatar"
+              element={
+                <ProtectedRoute>
+                  <CPLAvatarView />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="/*"
               element={
@@ -40,12 +59,16 @@ function App() {
                     <Routes>
                       <Route path="/" element={<Dashboard />} />
                       <Route path="/tables" element={<Tables />} />
+                      <Route path="/tables/:id" element={<TableDetail />} />
                       <Route path="/brains" element={<Brains />} />
+                      <Route path="/brains/:id" element={<BrainDetail />} />
+                      <Route path="/cpls" element={<CPLs />} />
                       <Route path="/workers" element={<Workers />} />
                       <Route path="/webhooks" element={<Webhooks />} />
                       <Route path="/query" element={<Query />} />
                       <Route path="/performance" element={<Performance />} />
                       <Route path="/settings" element={<Settings />} />
+                      <Route path="/developer" element={<DeveloperHub />} />
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                   </Layout>

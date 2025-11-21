@@ -406,7 +406,7 @@ impl VectorSearch {
 
     /// Search for similar vectors
     pub fn search(&self, vector: Vec<f32>, k: usize) -> VectorSearchBuilder {
-        VectorSearchBuilder::new(self.index.clone(), vector, k)
+        VectorSearchBuilder::new(self.index.clone(), vector, k, Arc::clone(&self.connection))
     }
 
     /// Add vector to index
@@ -437,8 +437,7 @@ impl VectorSearch {
         }
         
         // Vector index operations require server connection with vector search support
-        // In production, would call connection.add_vector(index, id, vector, metadata)
-        Err(Error::Query(format!("Vector index add not implemented: index '{}' requires server connection with vector search support", self.index)))
+        self.connection.add_vector(&self.index, id, vector, metadata).await
     }
 
     /// Batch add vectors
@@ -474,7 +473,7 @@ impl VectorSearch {
         }
         
         // Vector index batch operations require server connection with vector search support
-        Err(Error::Query(format!("Vector index batch add not implemented: index '{}' requires server connection with vector search support", self.index)))
+        self.connection.add_vectors_batch(&self.index, vectors).await
     }
 }
 
@@ -483,15 +482,17 @@ pub struct VectorSearchBuilder {
     vector: Vec<f32>,
     k: usize,
     filters: HashMap<String, JsonValue>,
+    connection: Arc<dyn Connection>,
 }
 
 impl VectorSearchBuilder {
-    pub fn new(index: String, vector: Vec<f32>, k: usize) -> Self {
+    pub fn new(index: String, vector: Vec<f32>, k: usize, connection: Arc<dyn Connection>) -> Self {
         Self {
             index,
             vector,
             k,
             filters: HashMap::new(),
+            connection,
         }
     }
 
@@ -540,9 +541,7 @@ impl VectorSearchBuilder {
         }
         
         // Vector search requires server connection with vector search support
-        // In production, would call connection.search_vectors(index, vector, k, filters)
-        // and return results as Vec<(id, similarity_score)>
-        Err(Error::Query(format!("Vector search not implemented: index '{}' requires server connection with vector search support", self.index)))
+        self.connection.search_vectors(&self.index, self.vector, self.k.min(10000), Some(self.filters)).await
     }
 }
 
@@ -558,17 +557,17 @@ impl MLOperations {
 
     /// Train model
     pub fn train(&self, model_type: &str) -> ModelTrainer {
-        ModelTrainer::new(model_type.to_string())
+        ModelTrainer::new(model_type.to_string(), Arc::clone(&self.connection))
     }
 
     /// Predict using model
     pub fn predict(&self, model_id: &str) -> ModelPredictor {
-        ModelPredictor::new(model_id.to_string())
+        ModelPredictor::new(model_id.to_string(), Arc::clone(&self.connection))
     }
 
     /// Feature extraction
     pub fn extract_features(&self, table: &str) -> FeatureExtractor {
-        FeatureExtractor::new(table.to_string())
+        FeatureExtractor::new(table.to_string(), Arc::clone(&self.connection))
     }
 }
 
@@ -576,14 +575,16 @@ pub struct ModelTrainer {
     model_type: String,
     training_data: Option<String>,
     params: HashMap<String, JsonValue>,
+    connection: Arc<dyn Connection>,
 }
 
 impl ModelTrainer {
-    pub fn new(model_type: String) -> Self {
+    pub fn new(model_type: String, connection: Arc<dyn Connection>) -> Self {
         Self {
             model_type,
             training_data: None,
             params: HashMap::new(),
+            connection,
         }
     }
 
@@ -620,21 +621,29 @@ impl ModelTrainer {
         }
         
         // Model training requires connection to server with ML capabilities
-        // In production, would call connection.train_model(model_type, training_data, params)
-        Err(Error::Query("Model training not implemented: requires server connection with ML runtime".to_string()))
+        let response = self.connection.train_model(&self.model_type, self.training_data.clone(), Some(self.params)).await?;
+        
+        // Parse response to get model ID
+        if let Some(model_id) = response.get("model_id").and_then(|i| i.as_str()) {
+            Ok(model_id.to_string())
+        } else {
+            Err(Error::Query("Invalid response format from model training - missing model_id".to_string()))
+        }
     }
 }
 
 pub struct ModelPredictor {
     model_id: String,
     input: Option<JsonValue>,
+    connection: Arc<dyn Connection>,
 }
 
 impl ModelPredictor {
-    pub fn new(model_id: String) -> Self {
+    pub fn new(model_id: String, connection: Arc<dyn Connection>) -> Self {
         Self {
             model_id,
             input: None,
+            connection,
         }
     }
 
@@ -666,21 +675,30 @@ impl ModelPredictor {
         }
         
         // Model prediction requires connection to server with ML capabilities
-        // In production, would call connection.predict(model_id, input)
-        Err(Error::Query(format!("Model prediction not implemented: model '{}' requires server connection with ML runtime", self.model_id)))
+        let response = self.connection.predict_model(&self.model_id, self.input.unwrap()).await?;
+        
+        // Parse prediction from response
+        if let Some(prediction) = response.get("prediction") {
+            Ok(prediction.clone())
+        } else {
+            // Return the whole response if no "prediction" field
+            Ok(response)
+        }
     }
 }
 
 pub struct FeatureExtractor {
     table: String,
     columns: Vec<String>,
+    connection: Arc<dyn Connection>,
 }
 
 impl FeatureExtractor {
-    pub fn new(table: String) -> Self {
+    pub fn new(table: String, connection: Arc<dyn Connection>) -> Self {
         Self {
             table,
             columns: Vec::new(),
+            connection,
         }
     }
 
@@ -703,8 +721,12 @@ impl FeatureExtractor {
         }
         
         // Feature extraction requires connection to server with ML capabilities
-        // In production, would call connection.extract_features(table, columns)
-        Err(Error::Query(format!("Feature extraction not implemented: table '{}' requires server connection with ML runtime", self.table)))
+        let columns = if self.columns.is_empty() {
+            None
+        } else {
+            Some(self.columns.clone())
+        };
+        self.connection.extract_features(&self.table, columns).await
     }
 }
 
@@ -807,8 +829,13 @@ impl WindowFunctionBuilder {
         }
         
         // Window functions require server connection with query executor support
-        // In production, would execute window function query via connection
-        Err(Error::Query(format!("Window function not implemented: table '{}' requires server connection with query executor", self.table)))
+        let function = self.function.unwrap();
+        self.connection.execute_window_function(
+            &self.table,
+            &function,
+            if self.partition_by.is_empty() { None } else { Some(self.partition_by) },
+            if self.order_by.is_empty() { None } else { Some(self.order_by) },
+        ).await
     }
 }
 
@@ -865,8 +892,12 @@ impl StatisticalBuilder {
         }
         
         // Statistical functions require server connection with query executor support
-        // In production, would execute statistical query via connection
-        Err(Error::Query(format!("Statistical function not implemented: table '{}' requires server connection with query executor", self.table)))
+        let function = self.function.unwrap();
+        self.connection.execute_statistical_function(
+            &self.table,
+            &function,
+            self.column.as_deref(),
+        ).await
     }
 }
 
@@ -934,8 +965,14 @@ impl TimeSeriesBuilder {
         }
         
         // Time series analysis requires server connection with query executor support
-        // In production, would execute time series query via connection
-        Err(Error::Query(format!("Time series analysis not implemented: table '{}' requires server connection with query executor", self.table)))
+        let time_col = self.time_column.unwrap();
+        let value_col = self.value_column.unwrap();
+        self.connection.execute_timeseries_analysis(
+            &self.table,
+            &time_col,
+            &value_col,
+            None, // analysis_type not yet supported in builder
+        ).await
     }
 }
 
@@ -1023,14 +1060,33 @@ impl WebhookOperations {
 
     /// Create webhook
     pub fn create(&self) -> WebhookBuilder {
-        WebhookBuilder::new()
+        WebhookBuilder::with_connection(
+            None,
+            None,
+            Vec::new(),
+            None,
+            Arc::clone(&self.connection),
+        )
     }
 
     /// List webhooks
     pub async fn list(&self) -> Result<Vec<WebhookInfo>> {
-        // Webhook listing requires server connection with webhook manager
-        // In production, would call connection.list_webhooks()
-        Err(Error::Query("Webhook listing not implemented: requires server connection with webhook manager".to_string()))
+        let webhooks_json = self.connection.list_webhooks().await?;
+        let mut webhooks = Vec::new();
+        for wh in webhooks_json {
+            if let (Some(id), Some(name), Some(url)) = (
+                wh.get("id").and_then(|i| i.as_str()),
+                wh.get("name").and_then(|n| n.as_str()),
+                wh.get("url").and_then(|u| u.as_str()),
+            ) {
+                webhooks.push(WebhookInfo {
+                    id: id.to_string(),
+                    name: name.to_string(),
+                    url: url.to_string(),
+                });
+            }
+        }
+        Ok(webhooks)
     }
 
     /// Delete webhook
@@ -1040,9 +1096,7 @@ impl WebhookOperations {
             return Err(Error::Query("Invalid webhook ID".to_string()));
         }
         
-        // Webhook deletion requires server connection with webhook manager
-        // In production, would call connection.delete_webhook(id)
-        Err(Error::Query(format!("Webhook deletion not implemented: webhook '{}' requires server connection with webhook manager", id)))
+        self.connection.delete_webhook(id).await
     }
 }
 
@@ -1051,15 +1105,34 @@ pub struct WebhookBuilder {
     url: Option<String>,
     events: Vec<String>,
     scope: Option<String>,
+    connection: Arc<dyn Connection>,
 }
 
 impl WebhookBuilder {
     pub fn new() -> Self {
+        // This will be updated to require connection
         Self {
             name: None,
             url: None,
             events: Vec::new(),
             scope: None,
+            connection: Arc::new(crate::connection::RemoteConnection::new("http://localhost:8080".to_string())),
+        }
+    }
+    
+    pub(crate) fn with_connection(
+        name: Option<String>,
+        url: Option<String>,
+        events: Vec<String>,
+        scope: Option<String>,
+        connection: Arc<dyn Connection>,
+    ) -> Self {
+        Self {
+            name,
+            url,
+            events,
+            scope,
+            connection,
         }
     }
 
@@ -1126,9 +1199,23 @@ impl WebhookBuilder {
             }
         }
         
-        // Webhook creation requires server connection with webhook manager
-        // In production, would call connection.create_webhook(name, url, events, scope)
-        Err(Error::Query(format!("Webhook creation not implemented: webhook '{}' requires server connection with webhook manager", name)))
+        // Create webhook via connection
+        let response = self.connection.create_webhook(&name, &url, self.events.clone(), self.scope.clone()).await?;
+        
+        // Parse response to get webhook info
+        if let (Some(id), Some(name_resp), Some(url_resp)) = (
+            response.get("id").and_then(|i| i.as_str()),
+            response.get("name").and_then(|n| n.as_str()),
+            response.get("url").and_then(|u| u.as_str()),
+        ) {
+            Ok(WebhookInfo {
+                id: id.to_string(),
+                name: name_resp.to_string(),
+                url: url_resp.to_string(),
+            })
+        } else {
+            Err(Error::Query("Invalid response format from webhook creation".to_string()))
+        }
     }
 }
 
@@ -1151,12 +1238,37 @@ impl SyncOperations {
 
     /// Sync with peer
     pub async fn sync_peer(&self, peer_id: &str) -> Result<SyncResult> {
-        Err(Error::Query(format!("Peer sync not implemented: peer '{}' requires server connection with distributed sync support", peer_id)))
+        let response = self.connection.sync_peer(peer_id).await?;
+        
+        // Parse response
+        let conflicts_resolved = response.get("conflicts_resolved").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+        let bytes_transferred = response.get("bytes_transferred").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+        
+        Ok(SyncResult {
+            synced_tables: 0, // Not provided by API
+            conflicts_resolved,
+        })
     }
 
     /// Get sync status
     pub async fn status(&self) -> Result<SyncStatus> {
-        Err(Error::Query("Sync status not implemented: requires server connection with distributed sync support".to_string()))
+        let response = self.connection.sync_status().await?;
+        
+        // Parse response
+        let peers = response.get("peers")
+            .and_then(|p| p.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_else(Vec::new);
+        
+        let synced_tables = response.get("synced_tables")
+            .and_then(|t| t.as_u64())
+            .map(|t| t as usize)
+            .unwrap_or(0);
+        
+        Ok(SyncStatus {
+            peers,
+            synced_tables,
+        })
     }
 }
 

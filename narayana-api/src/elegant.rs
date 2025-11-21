@@ -648,51 +648,51 @@ impl QueryBuilder {
                 let value = match col {
                             Column::Int8(v) => {
                                 if row_idx < v.len() {
-                                    Value::Int(v[row_idx] as i64)
+                                    Value::Int64(v[row_idx] as i64)
                                 } else {
-                                    Value::Int(0)
+                                    Value::Int64(0)
                                 }
                             }
                             Column::Int16(v) => {
                                 if row_idx < v.len() {
-                                    Value::Int(v[row_idx] as i64)
+                                    Value::Int64(v[row_idx] as i64)
                                 } else {
-                                    Value::Int(0)
+                                    Value::Int64(0)
                                 }
                             }
                             Column::Int32(v) => {
                                 if row_idx < v.len() {
-                                    Value::Int(v[row_idx] as i64)
+                                    Value::Int64(v[row_idx] as i64)
                                 } else {
-                                    Value::Int(0)
+                                    Value::Int64(0)
                                 }
                             }
                             Column::Int64(v) => {
                                 if row_idx < v.len() {
-                                    Value::Int(v[row_idx])
+                                    Value::Int64(v[row_idx])
                                 } else {
-                                    Value::Int(0)
+                                    Value::Int64(0)
                                 }
                             }
                             Column::UInt8(v) => {
                                 if row_idx < v.len() {
-                                    Value::Int(v[row_idx] as i64)
+                                    Value::Int64(v[row_idx] as i64)
                                 } else {
-                                    Value::Int(0)
+                                    Value::Int64(0)
                                 }
                             }
                             Column::UInt16(v) => {
                                 if row_idx < v.len() {
-                                    Value::Int(v[row_idx] as i64)
+                                    Value::Int64(v[row_idx] as i64)
                                 } else {
-                                    Value::Int(0)
+                                    Value::Int64(0)
                                 }
                             }
                             Column::UInt32(v) => {
                                 if row_idx < v.len() {
-                                    Value::Int(v[row_idx] as i64)
+                                    Value::Int64(v[row_idx] as i64)
                                 } else {
-                                    Value::Int(0)
+                                    Value::Int64(0)
                                 }
                             }
                             Column::UInt64(v) => {
@@ -700,12 +700,12 @@ impl QueryBuilder {
                                     // Check for overflow when converting u64 to i64
                                     let val = v[row_idx];
                                     if val > i64::MAX as u64 {
-                                        Value::Int(i64::MAX) // Clamp to max
+                                        Value::Int64(i64::MAX) // Clamp to max
                                     } else {
-                                        Value::Int(val as i64)
+                                        Value::Int64(val as i64)
                                     }
                                 } else {
-                                    Value::Int(0)
+                                    Value::Int64(0)
                                 }
                             }
                             Column::Float32(v) => {
@@ -726,9 +726,9 @@ impl QueryBuilder {
                                     }
                                     // EDGE CASE: Normalize -0.0 to 0.0
                                     let normalized = if val == -0.0 { 0.0 } else { val };
-                                    Value::Float(normalized as f64)
+                                    Value::Float64(normalized as f64)
                                 } else {
-                                    Value::Float(0.0)
+                                    Value::Float64(0.0)
                                 }
                             }
                             Column::Float64(v) => {
@@ -749,16 +749,16 @@ impl QueryBuilder {
                                     }
                                     // EDGE CASE: Normalize -0.0 to 0.0
                                     let normalized = if val == -0.0 { 0.0 } else { val };
-                                    Value::Float(normalized)
+                                    Value::Float64(normalized)
                                 } else {
-                                    Value::Float(0.0)
+                                    Value::Float64(0.0)
                                 }
                             }
                             Column::Boolean(v) => {
                                 if row_idx < v.len() {
-                                    Value::Bool(v[row_idx])
+                                    Value::Boolean(v[row_idx])
                                 } else {
-                                    Value::Bool(false)
+                                    Value::Boolean(false)
                                 }
                             }
                             Column::String(v) => {
@@ -777,16 +777,16 @@ impl QueryBuilder {
                             }
                             Column::Timestamp(v) => {
                                 if row_idx < v.len() {
-                                    Value::Int(v[row_idx])
+                                    Value::Int64(v[row_idx])
                                 } else {
-                                    Value::Int(0)
+                                    Value::Int64(0)
                                 }
                             }
                             Column::Date(v) => {
                                 if row_idx < v.len() {
-                                    Value::Int(v[row_idx] as i64)
+                                    Value::Int64(v[row_idx] as i64)
                                 } else {
-                                    Value::Int(0)
+                                    Value::Int64(0)
                                 }
                             }
                 };
@@ -1152,7 +1152,7 @@ impl InsertBuilder {
                     let mut values = Vec::new();
                     for (val_idx, v) in column_data[col_idx].iter().enumerate() {
                         match v {
-                            Value::Int(i) => {
+                            Value::Int64(i) => {
                                 if *i < i8::MIN as i64 || *i > i8::MAX as i64 {
                                     return Err(Error::Query(format!(
                                         "Value {} at row {} exceeds i8 range: {}",
@@ -1173,7 +1173,7 @@ impl InsertBuilder {
                     let mut values = Vec::new();
                     for (val_idx, v) in column_data[col_idx].iter().enumerate() {
                         match v {
-                            Value::Int(i) => {
+                            Value::Int64(i) => {
                                 if *i < i16::MIN as i64 || *i > i16::MAX as i64 {
                                     return Err(Error::Query(format!(
                                         "Value {} at row {} exceeds i16 range: {}",
@@ -1194,7 +1194,7 @@ impl InsertBuilder {
                     let mut values = Vec::new();
                     for (val_idx, v) in column_data[col_idx].iter().enumerate() {
                         match v {
-                            Value::Int(i) => {
+                            Value::Int64(i) => {
                                 if *i < i32::MIN as i64 || *i > i32::MAX as i64 {
                                     return Err(Error::Query(format!(
                                         "Value {} at row {} exceeds i32 range: {}",
@@ -1215,7 +1215,7 @@ impl InsertBuilder {
                     let mut values = Vec::new();
                     for (val_idx, v) in column_data[col_idx].iter().enumerate() {
                         match v {
-                            Value::Int(i) => values.push(*i),
+                            Value::Int64(i) => values.push(*i),
                             _ => return Err(Error::Query(format!(
                                 "Type mismatch at row {}: expected Int, got {:?}",
                                 val_idx, v
@@ -1228,7 +1228,7 @@ impl InsertBuilder {
                     let mut values = Vec::new();
                     for (val_idx, v) in column_data[col_idx].iter().enumerate() {
                         match v {
-                            Value::Int(i) => {
+                            Value::Int64(i) => {
                                 if *i < 0 || *i > u8::MAX as i64 {
                                     return Err(Error::Query(format!(
                                         "Value {} at row {} exceeds u8 range: 0-{}",
@@ -1249,7 +1249,7 @@ impl InsertBuilder {
                     let mut values = Vec::new();
                     for (val_idx, v) in column_data[col_idx].iter().enumerate() {
                         match v {
-                            Value::Int(i) => {
+                            Value::Int64(i) => {
                                 if *i < 0 || *i > u16::MAX as i64 {
                                     return Err(Error::Query(format!(
                                         "Value {} at row {} exceeds u16 range: 0-{}",
@@ -1270,7 +1270,7 @@ impl InsertBuilder {
                     let mut values = Vec::new();
                     for (val_idx, v) in column_data[col_idx].iter().enumerate() {
                         match v {
-                            Value::Int(i) => {
+                            Value::Int64(i) => {
                                 if *i < 0 || *i > u32::MAX as i64 {
                                     return Err(Error::Query(format!(
                                         "Value {} at row {} exceeds u32 range: 0-{}",
@@ -1291,7 +1291,7 @@ impl InsertBuilder {
                     let mut values = Vec::new();
                     for (val_idx, v) in column_data[col_idx].iter().enumerate() {
                         match v {
-                            Value::Int(i) => {
+                            Value::Int64(i) => {
                                 if *i < 0 {
                                     return Err(Error::Query(format!(
                                         "Value {} at row {} is negative, u64 requires non-negative",
@@ -1312,7 +1312,7 @@ impl InsertBuilder {
                     let mut values = Vec::new();
                     for (val_idx, v) in column_data[col_idx].iter().enumerate() {
                         match v {
-                            Value::Float(f) => {
+                            Value::Float64(f) => {
                                 // EDGE CASE: Check for NaN, Infinity, or -Infinity
                                 if f.is_nan() {
                                     return Err(Error::Query(format!(
@@ -1330,7 +1330,7 @@ impl InsertBuilder {
                                 let normalized = if *f == -0.0 { 0.0 } else { *f };
                                 values.push(normalized as f32);
                             }
-                            Value::Int(i) => {
+                            Value::Int64(i) => {
                                 // EDGE CASE: Check for integer overflow when converting to f32
                                 if *i > i32::MAX as i64 || *i < i32::MIN as i64 {
                                     // f32 can represent larger range, but precision may be lost
@@ -1350,7 +1350,7 @@ impl InsertBuilder {
                     let mut values = Vec::new();
                     for (val_idx, v) in column_data[col_idx].iter().enumerate() {
                         match v {
-                            Value::Float(f) => {
+                            Value::Float64(f) => {
                                 // EDGE CASE: Check for NaN, Infinity, or -Infinity
                                 if f.is_nan() {
                                     return Err(Error::Query(format!(
@@ -1368,7 +1368,7 @@ impl InsertBuilder {
                                 let normalized = if *f == -0.0 { 0.0 } else { *f };
                                 values.push(normalized);
                             }
-                            Value::Int(i) => values.push(*i as f64),
+                            Value::Int64(i) => values.push(*i as f64),
                             _ => return Err(Error::Query(format!(
                                 "Type mismatch at row {}: expected Float or Int, got {:?}",
                                 val_idx, v
@@ -1381,7 +1381,7 @@ impl InsertBuilder {
                     let mut values = Vec::new();
                     for (val_idx, v) in column_data[col_idx].iter().enumerate() {
                         match v {
-                            Value::Bool(b) => values.push(*b),
+                            Value::Boolean(b) => values.push(*b),
                             _ => return Err(Error::Query(format!(
                                 "Type mismatch at row {}: expected Bool, got {:?}",
                                 val_idx, v
@@ -1433,7 +1433,7 @@ impl InsertBuilder {
                             let mut values = Vec::new();
                             for (val_idx, v) in column_data[col_idx].iter().enumerate() {
                                 match v {
-                                    Value::Int(i) => values.push(*i),
+                                    Value::Int64(i) => values.push(*i),
                                     Value::Null if field.nullable => {
                                         values.push(0); // Use 0 as null placeholder
                                     }
@@ -1547,29 +1547,29 @@ impl Row {
 /// Value - elegant value type
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Value {
-    Int(i64),
-    Float(f64),
+    Int64(i64),
+    Float64(f64),
     String(String),
-    Bool(bool),
+    Boolean(bool),
     Null,
     Array(Vec<Value>),
 }
 
 impl From<i32> for Value {
     fn from(v: i32) -> Self {
-        Value::Int(v as i64)
+        Value::Int64(v as i64)
     }
 }
 
 impl From<i64> for Value {
     fn from(v: i64) -> Self {
-        Value::Int(v)
+        Value::Int64(v)
     }
 }
 
 impl From<f64> for Value {
     fn from(v: f64) -> Self {
-        Value::Float(v)
+        Value::Float64(v)
     }
 }
 
@@ -1587,7 +1587,31 @@ impl From<String> for Value {
 
 impl From<bool> for Value {
     fn from(v: bool) -> Self {
-        Value::Bool(v)
+        Value::Boolean(v)
+    }
+}
+
+impl From<narayana_core::row::Value> for Value {
+    fn from(v: narayana_core::row::Value) -> Self {
+        match v {
+            narayana_core::row::Value::Int8(i) => Value::Int64(i as i64),
+            narayana_core::row::Value::Int16(i) => Value::Int64(i as i64),
+            narayana_core::row::Value::Int32(i) => Value::Int64(i as i64),
+            narayana_core::row::Value::Int64(i) => Value::Int64(i),
+            narayana_core::row::Value::UInt8(u) => Value::Int64(u as i64),
+            narayana_core::row::Value::UInt16(u) => Value::Int64(u as i64),
+            narayana_core::row::Value::UInt32(u) => Value::Int64(u as i64),
+            narayana_core::row::Value::UInt64(u) => Value::Int64(u as i64),
+            narayana_core::row::Value::Float32(f) => Value::Float64(f as f64),
+            narayana_core::row::Value::Float64(f) => Value::Float64(f),
+            narayana_core::row::Value::Boolean(b) => Value::Boolean(b),
+            narayana_core::row::Value::String(s) => Value::String(s),
+            narayana_core::row::Value::Binary(b) => Value::String(base64::encode(b)),
+            narayana_core::row::Value::Timestamp(t) => Value::Int64(t),
+            narayana_core::row::Value::Date(d) => Value::Int64(d as i64),
+            narayana_core::row::Value::Null => Value::Null,
+            narayana_core::row::Value::Array(arr) => Value::Array(arr.into_iter().map(Value::from).collect()),
+        }
     }
 }
 

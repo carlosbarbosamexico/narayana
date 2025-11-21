@@ -1,10 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { apiClient } from '../lib/api'
-import { Plus, Trash2, Database } from 'lucide-react'
+import { Plus, Trash2, Database, Eye } from 'lucide-react'
 import { useState } from 'react'
 
 export default function Tables() {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [tableName, setTableName] = useState('')
 
@@ -62,23 +64,33 @@ export default function Tables() {
       ) : tables && tables.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {tables.map((table) => (
-            <div key={table.id} className="card">
+            <div key={table.id} className="card cursor-pointer hover:shadow-lg transition-shadow" onClick={() => navigate(`/tables/${table.id}`)}>
               <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-1">
                   <div className="p-2 bg-primary-50 rounded-lg">
                     <Database className="w-5 h-5 text-primary-600" />
                   </div>
-                  <div>
+                  <div className="flex-1">
                     <h3 className="font-semibold text-gray-900">{table.name}</h3>
                     <p className="text-sm text-gray-500">ID: {table.id}</p>
                   </div>
                 </div>
-                <button
-                  onClick={() => deleteMutation.mutate(table.id)}
-                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    onClick={() => navigate(`/tables/${table.id}`)}
+                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                    title="View data"
+                  >
+                    <Eye className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => deleteMutation.mutate(table.id)}
+                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    title="Delete table"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
               <div className="mt-4 pt-4 border-t border-gray-200">
                 <div className="flex items-center justify-between text-sm">

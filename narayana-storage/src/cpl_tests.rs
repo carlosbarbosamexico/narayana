@@ -14,18 +14,17 @@ mod tests {
 
     async fn create_test_cpl() -> Arc<ConsciencePersistentLoop> {
         let brain = Arc::new(CognitiveBrain::new());
-        let config = CPLConfig {
-            loop_interval_ms: 50, // Fast for testing
-            enable_global_workspace: true,
-            enable_background_daemon: true,
-            enable_dreaming: true,
-            working_memory_capacity: 5,
-            enable_attention: true,
-            enable_narrative: true,
-            enable_memory_bridge: true,
-            enable_persistence: false, // Disable for tests
-            persistence_dir: None,
-        };
+        let mut config = CPLConfig::default();
+        config.loop_interval_ms = 50; // Fast for testing
+        config.enable_global_workspace = true;
+        config.enable_background_daemon = true;
+        config.enable_dreaming = true;
+        config.working_memory_capacity = 5;
+        config.enable_attention = true;
+        config.enable_narrative = true;
+        config.enable_memory_bridge = true;
+        config.enable_persistence = false; // Disable for tests
+        config.persistence_dir = None;
         
         let cpl = Arc::new(ConsciencePersistentLoop::new(brain, config));
         cpl.initialize().await.unwrap();

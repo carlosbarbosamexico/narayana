@@ -154,6 +154,67 @@ export const apiClient = {
     return response.data
   },
 
+  // Brain details
+  getThoughts: async (brainId: string, state?: string) => {
+    const params = state ? { state } : {}
+    const response = await api.get(`/brains/${brainId}/thoughts/list`, { params })
+    return response.data
+  },
+
+  getMemories: async (brainId: string, type: string = 'episodic', limit: number = 100) => {
+    const response = await api.get(`/brains/${brainId}/memories`, {
+      params: { type, limit },
+    })
+    return response.data
+  },
+
+  getThoughtTimeline: async (brainId: string) => {
+    const response = await api.get(`/brains/${brainId}/thought-timeline`)
+    return response.data
+  },
+
+  getConflicts: async (brainId: string) => {
+    const response = await api.get(`/brains/${brainId}/conflicts`)
+    return response.data
+  },
+
+  getMemoryAccesses: async (brainId: string) => {
+    const response = await api.get(`/brains/${brainId}/memory-accesses`)
+    return response.data
+  },
+
+  // CPL Management
+  getCPLs: async () => {
+    const response = await api.get('/cpls')
+    // API returns { cpls: [], count: 0 }, so return the full response data
+    return response.data || { cpls: [], count: 0 }
+  },
+
+  createCPL: async (config: any) => {
+    const response = await api.post('/cpls', config)
+    return response.data
+  },
+
+  getCPL: async (cplId: string) => {
+    const response = await api.get(`/cpls/${cplId}`)
+    return response.data
+  },
+
+  startCPL: async (cplId: string) => {
+    const response = await api.post(`/cpls/${cplId}/start`)
+    return response.data
+  },
+
+  stopCPL: async (cplId: string) => {
+    const response = await api.post(`/cpls/${cplId}/stop`)
+    return response.data
+  },
+
+  deleteCPL: async (cplId: string) => {
+    const response = await api.delete(`/cpls/${cplId}`)
+    return response.data
+  },
+
   // Workers
   getWorkers: async (): Promise<Worker[]> => {
     const response = await api.get('/workers')

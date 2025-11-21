@@ -1,0 +1,65 @@
+[package]
+name = "narayana-spk"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+narayana-core = { path = "../narayana-core" }
+narayana-wld = { path = "../narayana-wld" }
+narayana-storage = { path = "../narayana-storage" }
+narayana-llm = { path = "../narayana-llm" }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+parking_lot = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+bytes = { workspace = true }
+chrono = { workspace = true }
+reqwest = { workspace = true }
+futures-util = "0.3"
+dirs = "5.0"
+sha2 = { workspace = true }
+tempfile = "3.8"
+base64 = "0.21"
+url = "2.5"
+
+# Native TTS engines
+# macOS: NSSpeechSynthesizer (via objc crate)
+# Linux: espeak-ng or festival
+# Windows: SAPI (via winapi)
+[target.'cfg(target_os = "macos")'.dependencies]
+objc = "0.2"
+core-foundation = "0.9"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# espeak-ng will be called via command line
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winapi = { version = "0.3", features = ["sapi", "combaseapi", "objbase"] }
+
+# Optional API-based TTS providers
+# OpenAI TTS, Google Cloud TTS, Amazon Polly, etc.
+# tts = { version = "0.25", optional = true }
+# piper-tts = { version = "0.1", optional = true }
+
+[dev-dependencies]
+tokio-test = { workspace = true }
+mockall = "0.12"
+tempfile = "3.8"
+
+[features]
+default = []
+native-tts = []  # Enable native TTS (always on for target OS)
+# api-tts = ["tts"]  # Enable API-based TTS providers (when implemented)
+# piper = ["piper-tts"]  # Enable Piper TTS (when implemented)
+
+[[example]]
+name = "basic_speak"
+path = "examples/basic_speak.rs"
+

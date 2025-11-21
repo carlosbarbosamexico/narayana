@@ -89,7 +89,7 @@ impl crate::protocol_adapters::ProtocolAdapter for HttpAdapter {
         Ok(())
     }
 
-    async fn send_action(&self, action: WorldAction) -> Result<(), Error> {
+    async fn send_action(&self, _action: WorldAction) -> Result<(), Error> {
         // HTTP adapter typically receives events, not sends actions
         // Actions would be sent via HTTP client to external systems
         warn!("HTTP adapter send_action called - not implemented for server mode");

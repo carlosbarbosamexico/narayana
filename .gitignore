@@ -36,3 +36,8 @@ coverage/
 # Development documentation (archived)
 dev-docs/
 
+
+# Environment files
+.env
+.env.local
+.env.*.local

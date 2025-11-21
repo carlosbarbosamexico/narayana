@@ -29,3 +29,5 @@ pub trait Provider: Send + Sync {
     fn available_models(&self) -> Vec<String>;
 }
 
+
+

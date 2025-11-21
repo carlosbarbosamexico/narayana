@@ -1,0 +1,45 @@
+[package]
+name = "narayana-eye"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+narayana-core = { path = "../narayana-core" }
+narayana-wld = { path = "../narayana-wld" }
+narayana-storage = { path = "../narayana-storage" }
+narayana-llm = { path = "../narayana-llm" }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+parking_lot = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+bytes = { workspace = true }
+chrono = { workspace = true }
+reqwest = { workspace = true }
+image = "0.24"
+ort = "2.0.0-rc.10"
+opencv = { version = "0.88", default-features = false, features = ["imgproc", "videoio", "highgui"] }
+dirs = "5.0"
+sha2 = { workspace = true }
+hex = { workspace = true }
+futures-util = "0.3"
+
+[dev-dependencies]
+tokio-test = { workspace = true }
+mockall = "0.12"
+tempfile = "3.8"
+
+[[example]]
+name = "basic_vision"
+path = "examples/basic_vision.rs"
+
+[[bin]]
+name = "download_model"
+path = "src/bin/download_model.rs"
+

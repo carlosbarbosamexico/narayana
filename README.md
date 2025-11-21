@@ -141,7 +141,7 @@ NarayanaDB is a computational database system that integrates high-performance c
 - **Vector Search**: Sub-millisecond similarity search for embeddings
 
 ### 4. Conscience Persistent Loop (CPL)
-
+make sure all new buttons work
 #### Core Components
 - **Global Workspace**: Consciousness layer with competition mechanism (Baars' Global Workspace Theory)
 - **Background Daemon**: Unconscious processing tasks (memory consolidation, pattern detection)
@@ -1260,6 +1260,7 @@ cargo bench
 - [Talking Cricket Whitepaper](docs/talking-cricket-whitepaper.md) - Moral guide system theory
 - [Talking Cricket Implementation](docs/talking-cricket-implementation.md) - Implementation guide
 - [Genetics & Traits Integration](docs/genetics-traits-integration.md) - Genetics system docs
+- [Biological Memory Curves Whitepaper](docs/biological-memory-curves-whitepaper.md) - Computational neuroscience approach to AGI memory systems
 
 ---
 
@@ -1286,7 +1287,8 @@ For questions, collaboration opportunities, or research inquiries, please reach 
 
 ## Acknowledgments
 
-Developed by Carlos Barbosa and contributors.
+Developed by Carlos Barbosa
+Contributors: Lucas Gualberto Silva, Rafael Couto
 
 Special thanks to:
 - The Rust community for amazing tools and libraries
@@ -1395,7 +1397,8 @@ NarayanaDB represents a novel integration of database systems, cognitive archite
 1. Review the [Quick Start Guide](QUICK_START.md) for immediate deployment
 2. Study the [CPL Theoretical Foundations](docs/cpl-theoretical-foundations.md) for cognitive architecture understanding
 3. Examine the [Talking Cricket Whitepaper](docs/talking-cricket-whitepaper.md) for moral reasoning implementation
-4. Contribute code, documentation, or research insights via pull requests
+4. Read the [Biological Memory Curves Whitepaper](docs/biological-memory-curves-whitepaper.md) for computational neuroscience approach to memory systems
+5. Contribute code, documentation, or research insights via pull requests
 5. Join discussions on cognitive architecture, AGI development, and database systems
 
 **Research Collaboration:**

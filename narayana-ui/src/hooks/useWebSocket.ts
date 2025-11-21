@@ -81,7 +81,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       }
 
       ws.onerror = (error) => {
-        console.error('WebSocket error:', error)
+        // Only log error if we haven't exceeded max reconnect attempts
+        // This reduces console noise when server is not available
+        if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+          // Silently handle connection errors - they're expected when server is down
+          // Only call onError callback if provided, but don't spam console
+        }
         onError?.(error)
       }
 
@@ -98,7 +103,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         }
       }
     } catch (error) {
-      console.error('Failed to create WebSocket:', error)
+      // Only log if we haven't exceeded max reconnect attempts
+      if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+        // Silently handle - connection will retry automatically
+      }
     }
   }, [url, onMessage, onError, onOpen, onClose, reconnectInterval, maxReconnectAttempts])
 

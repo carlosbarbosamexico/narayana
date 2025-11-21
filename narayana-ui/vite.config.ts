@@ -26,6 +26,21 @@ export default defineConfig({
         ws: true,
         changeOrigin: true,
       },
+      '/avatar/ws': {
+        target: 'ws://localhost:8081',
+        ws: true,
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path,
+        configure: (proxy, _options) => {
+          proxy.on('error', (err, _req, res) => {
+            console.log('WebSocket proxy error', err);
+          });
+          proxy.on('proxyReqWs', (proxyReq, req, socket) => {
+            console.log('WebSocket proxy request', req.url);
+          });
+        },
+      },
     },
   },
   build: {

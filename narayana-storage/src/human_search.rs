@@ -1343,10 +1343,59 @@ impl SemanticSearch {
     }
 
     async fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchResult>> {
-        // Generate query embedding and search
-        // Note: This requires the embedding generator, which should be passed in
-        // For now, return empty - the actual search happens in search_vectors
-        Ok(Vec::new())
+        // Generate query embedding from text
+        let query_embedding = self.text_to_embedding(query);
+        
+        // Search using the embedding
+        let vector_results = self.search_vectors(&query_embedding, limit).await?;
+        
+        // Convert to SearchResult format
+        let mut results = Vec::new();
+        for result in vector_results {
+            results.push(SearchResult {
+                id: result.id.clone(),
+                score: result.score as f64,
+                highlights: Vec::new(),
+                matched_fields: vec!["*".to_string()],
+                explanation: Some("Semantic similarity match".to_string()),
+                data: serde_json::json!({}),
+            });
+        }
+        
+        Ok(results)
+    }
+    
+    /// Convert text to embedding vector (hash-based approach)
+    fn text_to_embedding(&self, text: &str) -> Vec<f32> {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        
+        let mut embedding = vec![0.0; self.dimension];
+        let words: Vec<&str> = text.split_whitespace().collect();
+        
+        for (i, word) in words.iter().enumerate() {
+            let mut hasher = DefaultHasher::new();
+            word.hash(&mut hasher);
+            let hash = hasher.finish();
+            
+            // Distribute hash across dimensions
+            for dim in 0..self.dimension {
+                let mut hasher2 = DefaultHasher::new();
+                (hash, dim, i).hash(&mut hasher2);
+                let val = (hasher2.finish() % 1000) as f32 / 1000.0;
+                embedding[dim] += val;
+            }
+        }
+        
+        // Normalize
+        let norm: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if norm > 0.0 {
+            for val in &mut embedding {
+                *val /= norm;
+            }
+        }
+        
+        embedding
     }
 
     async fn search_vectors(&self, query_embedding: &[f32], limit: usize) -> Result<Vec<SemanticSearchResult>> {

@@ -1,0 +1,54 @@
+[package]
+name = "narayana-cns"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Central Nervous System for component registration and capability-based routing"
+
+[dependencies]
+narayana-core = { path = "../narayana-core" }
+narayana-wld = { path = "../narayana-wld", optional = true }
+narayana-storage = { path = "../narayana-storage" }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+parking_lot = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+bytes = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+futures-util = "0.3"
+futures = "0.3"
+
+# Transport protocols - High-level
+reqwest = { version = "0.11", features = ["json"], optional = true }
+tokio-tungstenite = { version = "0.21", optional = true }
+rumqttc = { version = "0.12", optional = true }
+
+# Transport protocols - Low-level
+serialport = { version = "4.2", optional = true }
+# Note: i2c and spi transports would require platform-specific implementations
+# For now, these are placeholders for future implementation
+
+[features]
+default = []
+wld-integration = ["narayana-wld"]
+http-transport = ["reqwest"]
+websocket-transport = ["tokio-tungstenite"]
+mqtt-transport = ["rumqttc"]
+serial-transport = ["serialport"]
+all-transports = [
+    "http-transport",
+    "websocket-transport",
+    "mqtt-transport",
+    "serial-transport",
+]
+
+[dev-dependencies]
+tokio-test = { workspace = true }
+tempfile = "3.8"
+

@@ -75,6 +75,11 @@ pub mod cpl_manager;
 pub mod genetics;
 pub mod traits_equations;
 pub mod talking_cricket;
+pub mod entropy_controller;
+pub mod arrow_of_time;
+pub mod complexity_range_simulator;
+pub mod temporal_accelerator;
+pub mod experience_seeder;
 
 // Test modules
 #[cfg(test)]
@@ -87,6 +92,8 @@ mod rl_tests;
 mod sensory_tests;
 #[cfg(test)]
 mod cpl_tests;
+#[cfg(test)]
+mod aot_tests;
 
 pub use column_store::{ColumnStore, InMemoryColumnStore};
 pub use compression::{Compressor, Decompressor};

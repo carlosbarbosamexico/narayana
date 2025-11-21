@@ -33,7 +33,7 @@ impl crate::protocol_adapters::ProtocolAdapter for WebSocketAdapter {
         "websocket"
     }
 
-    async fn start(&self, broker: WorldBrokerHandle) -> Result<(), Error> {
+    async fn start(&self, _broker: WorldBrokerHandle) -> Result<(), Error> {
         if *self.is_running.read() {
             return Err(Error::Storage("WebSocket adapter already running".to_string()));
         }

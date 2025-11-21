@@ -51,6 +51,12 @@ error() {
     exit 1
 }
 
+debug() {
+    if [ "${DEBUG:-}" = "1" ]; then
+        echo -e "${CYAN}[DEBUG]${NC}  $1"
+    fi
+}
+
 # Check if port is in use
 is_port_in_use() {
     local port=$1
@@ -66,10 +72,10 @@ build() {
     fi
     
     cd "${SCRIPT_DIR}"
-    cargo build --release --bin narayana-server
+    cargo build --release --bin narayana-server --features avatar
     
     success "Build complete!"
-    info "  Binary: ./target/release/narayana-server"
+    info "  Binary: ./target/release/narayana-server (with avatar support)"
 }
 
 # Start server in background
@@ -81,9 +87,14 @@ start_server() {
 
     info "Starting NarayanaDB server in background..."
     
-    # Check if binary exists
+    # Check if binary exists, build with avatar if missing
     if [ ! -f "${SCRIPT_DIR}/target/release/narayana-server" ]; then
-        error "Server binary not found. Run './nyn build' first"
+        info "Server binary not found. Building with avatar support..."
+        cd "${SCRIPT_DIR}"
+        cargo build --release --bin narayana-server --features avatar
+        if [ ! -f "${SCRIPT_DIR}/target/release/narayana-server" ]; then
+            error "Failed to build server binary"
+        fi
     fi
     
     # Set environment variables
@@ -108,6 +119,16 @@ start_server() {
             success "Server started (PID: $SERVER_PID)"
             info "  HTTP API: http://localhost:${HTTP_PORT}"
             info "  Logs: tail -f /tmp/narayana_server.log"
+            
+            # Wait a bit more and check if avatar bridge is running
+            sleep 2
+            if lsof -Pi :8081 -sTCP:LISTEN -t >/dev/null 2>&1; then
+                success "Avatar bridge is running on port 8081"
+            else
+                warning "Avatar bridge not detected on port 8081"
+                warning "Check server logs: tail -f /tmp/narayana_server.log | grep -i avatar"
+            fi
+            
             return 0
         fi
         sleep 1
@@ -142,8 +163,15 @@ dev_server() {
     mkdir -p "${DATA_DIR}"
     
     # Start server in foreground
+    # If binary doesn't exist or wasn't built with avatar feature, use cargo run
     cd "${SCRIPT_DIR}"
-    ./target/release/narayana-server
+    if [ ! -f "${SCRIPT_DIR}/target/release/narayana-server" ]; then
+        info "Binary not found. Building with avatar support..."
+        cargo build --release --bin narayana-server --features avatar
+    fi
+    
+    # Use cargo run to ensure avatar feature is enabled
+    cargo run --release --bin narayana-server --features avatar
 }
 
 # Stop server and UI
@@ -226,14 +254,250 @@ start_ui() {
     fi
 }
 
+# Seed avatar example CPL
+seed_avatar_example() {
+    info "Seeding avatar example CPL..."
+    
+    # Wait for server to be ready
+    info "Waiting for server to be ready..."
+    local server_ready=false
+    for i in {1..30}; do
+        if curl -s http://localhost:${HTTP_PORT}/health > /dev/null 2>&1; then
+            server_ready=true
+            info "Server is ready (attempt $i)"
+            break
+        fi
+        sleep 1
+    done
+    
+    if [ "$server_ready" = false ]; then
+        error "Server is not responding after 30 attempts. Cannot seed avatar example."
+        return 1
+    fi
+    
+    # Get authentication token
+    info "Authenticating..."
+    AUTH_RESPONSE=$(curl -s -X POST http://localhost:${HTTP_PORT}/api/v1/auth/login \
+        -H "Content-Type: application/json" \
+        -d '{"username":"admin","password":"admin123"}')
+    
+    # Try jq first, fallback to grep
+    if command -v jq > /dev/null 2>&1; then
+        TOKEN=$(echo "$AUTH_RESPONSE" | jq -r '.token // empty' 2>/dev/null || echo "")
+    else
+        TOKEN=$(echo "$AUTH_RESPONSE" | grep -o '"token":"[^"]*"' | cut -d'"' -f4 || echo "")
+    fi
+    
+    if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ] || [ "$TOKEN" = "" ]; then
+        warning "Failed to authenticate. Response: $AUTH_RESPONSE"
+        warning "Skipping avatar example seeding."
+        warning "You can manually create an avatar CPL via the UI."
+        return 0
+    fi
+    
+    success "Authenticated successfully"
+    
+    # Create CPL with full multimodal avatar + LLM
+    info "Creating avatar CPL with all multimodal capabilities..."
+    CPL_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST http://localhost:${HTTP_PORT}/api/v1/cpls \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $TOKEN" \
+        -d '{
+            "config": {
+                "loop_interval_ms": 100,
+                "enable_global_workspace": true,
+                "enable_background_daemon": true,
+                "enable_dreaming": true,
+                "working_memory_capacity": 7,
+                "enable_attention": true,
+                "enable_narrative": true,
+                "enable_memory_bridge": true,
+                "enable_persistence": true,
+                "persistence_dir": "data/cpl",
+                "enable_genetics": true,
+                "enable_avatar": true,
+                "avatar_config": {
+                    "enabled": true,
+                    "provider": "BeyondPresence",
+                    "expression_sensitivity": 0.7,
+                    "animation_speed": 1.0,
+                    "enable_lip_sync": true,
+                    "enable_gestures": true,
+                    "avatar_id": "default",
+                    "enable_vision": true,
+                    "vision_config": {
+                        "fps": 30,
+                        "width": 640,
+                        "height": 480,
+                        "camera_id": 0
+                    },
+                    "enable_audio_input": true,
+                    "audio_input_config": {
+                        "sample_rate": 16000,
+                        "channels": 1
+                    },
+                    "enable_tts": true,
+                    "tts_config": {
+                        "rate": 1.0,
+                        "volume": 1.0,
+                        "voice": {
+                            "language": "en-US",
+                            "name": "default"
+                        }
+                    }
+                }
+            }
+        }')
+    
+    # Extract HTTP code (last line) and response body
+    HTTP_CODE=$(echo "$CPL_RESPONSE" | tail -n 1)
+    CPL_RESPONSE_BODY=$(echo "$CPL_RESPONSE" | sed '$d')
+    CPL_RESPONSE="$CPL_RESPONSE_BODY"
+    
+    debug "CPL creation HTTP code: $HTTP_CODE"
+    debug "CPL creation response body: $CPL_RESPONSE"
+    
+    # Try jq first, fallback to grep
+    if command -v jq > /dev/null 2>&1; then
+        CPL_ID=$(echo "$CPL_RESPONSE" | jq -r '.cpl_id // .id // empty' 2>/dev/null || echo "")
+        # Check for error response
+        if [ -z "$CPL_ID" ] || [ "$CPL_ID" = "null" ] || [ "$CPL_ID" = "" ]; then
+            ERROR_MSG=$(echo "$CPL_RESPONSE" | jq -r '.error // empty' 2>/dev/null || echo "")
+            if [ -n "$ERROR_MSG" ] && [ "$ERROR_MSG" != "null" ] && [ "$ERROR_MSG" != "" ]; then
+                error "Failed to create avatar CPL: $ERROR_MSG"
+                echo "Full response: $CPL_RESPONSE"
+            else
+                error "Failed to create avatar CPL. Response did not contain cpl_id."
+                echo "Full response: $CPL_RESPONSE"
+            fi
+            warning "You can manually create an avatar CPL via the UI."
+            return 1
+        fi
+    else
+        CPL_ID=$(echo "$CPL_RESPONSE" | grep -o '"cpl_id":"[^"]*"' | cut -d'"' -f4 || echo "")
+        if [ -z "$CPL_ID" ]; then
+            # Try 'id' field as fallback
+            CPL_ID=$(echo "$CPL_RESPONSE" | grep -o '"id":"[^"]*"' | cut -d'"' -f4 || echo "")
+        fi
+        if [ -z "$CPL_ID" ] || [ "$CPL_ID" = "null" ]; then
+            error "Failed to create avatar CPL. Response: $CPL_RESPONSE"
+            warning "You can manually create an avatar CPL via the UI."
+            return 1
+        fi
+    fi
+    
+    # Debug output
+    debug "CPL creation response: $CPL_RESPONSE"
+    
+    success "Avatar CPL created: $CPL_ID"
+    
+    # Start the CPL (if endpoint is available)
+    info "Starting avatar CPL..."
+    HTTP_CODE=$(curl -s -o /tmp/start_response.json -w "%{http_code}" -X POST http://localhost:${HTTP_PORT}/api/v1/cpls/${CPL_ID}/start \
+        -H "Authorization: Bearer $TOKEN")
+    START_RESPONSE=$(cat /tmp/start_response.json 2>/dev/null || echo "")
+    rm -f /tmp/start_response.json
+    
+    if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
+        if command -v jq > /dev/null 2>&1; then
+            SUCCESS=$(echo "$START_RESPONSE" | jq -r '.success // false' 2>/dev/null || echo "false")
+            if [ "$SUCCESS" = "true" ]; then
+                success "Avatar CPL started successfully"
+            else
+                warning "Avatar CPL may not have started properly. Response: $START_RESPONSE"
+            fi
+        elif echo "$START_RESPONSE" | grep -q '"success":true'; then
+            success "Avatar CPL started successfully"
+        else
+            warning "Could not verify CPL start status. HTTP $HTTP_CODE. Response: $START_RESPONSE"
+            warning "The CPL was created but may not be running. You can start it manually via the UI."
+        fi
+    elif [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "501" ]; then
+        warning "CPL start endpoint not available (HTTP $HTTP_CODE). The CPL was created but not started."
+        warning "You can start it manually via the UI."
+    else
+        warning "Failed to start avatar CPL (HTTP $HTTP_CODE). Response: $START_RESPONSE"
+        warning "The CPL was created but may not be running. You can start it manually via the UI."
+    fi
+    
+    if [ -n "$CPL_ID" ] && [ "$CPL_ID" != "null" ] && [ "$CPL_ID" != "" ]; then
+        echo ""
+        echo -e "${GREEN}╔═══════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${GREEN}║     ✅ AVATAR EXAMPLE CPL READY!                              ║${NC}"
+        echo -e "${GREEN}╠═══════════════════════════════════════════════════════════════╣${NC}"
+        echo -e "${GREEN}║                                                               ║${NC}"
+        echo -e "${GREEN}║     👁️  Vision: Camera → LLM → Understanding                 ║${NC}"
+        echo -e "${GREEN}║     🎤  Hearing: Microphone → LLM → Conversation             ║${NC}"
+        echo -e "${GREEN}║     🗣️  Speech: LLM → TTS → Avatar speaks                    ║${NC}"
+        echo -e "${GREEN}║     🧠  LLM: All multimodal input processed intelligently    ║${NC}"
+        echo -e "${GREEN}║                                                               ║${NC}"
+        echo -e "${GREEN}║     CPL ID: ${CPL_ID}                                     ║${NC}"
+        echo -e "${GREEN}║                                                               ║${NC}"
+        echo -e "${GREEN}║     📝 Next Steps:                                           ║${NC}"
+        echo -e "${GREEN}║     1. Open UI: http://localhost:${UI_PORT}                      ║${NC}"
+        echo -e "${GREEN}║     2. Click 'Avatar' button on the CPL                       ║${NC}"
+        echo -e "${GREEN}║     3. Grant camera & microphone permissions                 ║${NC}"
+        echo -e "${GREEN}║     4. Interact with the avatar!                             ║${NC}"
+        echo -e "${GREEN}║                                                               ║${NC}"
+        echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════╝${NC}"
+        echo ""
+    else
+        warning "Failed to start avatar CPL. You can start it manually via the UI."
+        warning "Response: $START_RESPONSE"
+    fi
+}
+
 # Start both server and UI
 start_ui_mode() {
+    local SEED_AVATAR=false
+    
+    # Parse arguments (already shifted in main case statement)
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --seed-avatar)
+                SEED_AVATAR=true
+                shift
+                ;;
+            *)
+                warning "Unknown option: $1"
+                shift
+                ;;
+        esac
+    done
+    
     info "Starting NarayanaDB with UI..."
+    
+    # If seeding avatar, ensure server is built with avatar feature
+    if [ "$SEED_AVATAR" = true ]; then
+        info "Avatar seeding requested - ensuring server has avatar support..."
+        cd "${SCRIPT_DIR}"
+        if [ ! -f "${SCRIPT_DIR}/target/release/narayana-server" ]; then
+            info "Building server with avatar support..."
+            cargo build --release --bin narayana-server --features avatar
+        else
+            # Rebuild to ensure avatar feature is included
+            info "Rebuilding server with avatar support to ensure compatibility..."
+            cargo build --release --bin narayana-server --features avatar
+        fi
+        if [ ! -f "${SCRIPT_DIR}/target/release/narayana-server" ]; then
+            error "Failed to build server with avatar support"
+        fi
+    fi
     
     # Start server first
     if ! is_port_in_use ${HTTP_PORT}; then
         start_server
         sleep 2
+    else
+        warning "Server port ${HTTP_PORT} is already in use (server may already be running)"
+        # Check if avatar bridge is running
+        if lsof -Pi :8081 -sTCP:LISTEN -t >/dev/null 2>&1; then
+            success "Avatar bridge is running on port 8081"
+        else
+            warning "Server is running but avatar bridge not detected on port 8081"
+            warning "The server may not have been built with --features avatar"
+            warning "To fix: ./nyn stop && ./nyn build && ./nyn ui --seed-avatar"
+        fi
     fi
     
     # Start UI
@@ -247,6 +511,21 @@ start_ui_mode() {
     success "║     UI:     http://localhost:${UI_PORT}                        ║"
     success "║                                                               ║"
     success "╚═══════════════════════════════════════════════════════════════╝"
+    echo ""
+    
+    # Seed avatar example if requested
+    if [ "$SEED_AVATAR" = true ]; then
+        echo ""
+        info "Seed avatar flag is enabled, calling seed_avatar_example..."
+        seed_avatar_example
+        local SEED_EXIT_CODE=$?
+        if [ $SEED_EXIT_CODE -ne 0 ]; then
+            warning "Avatar seeding returned exit code $SEED_EXIT_CODE"
+        fi
+    else
+        debug "Seed avatar flag is false, skipping seed_avatar_example"
+    fi
+    
     echo ""
     info "To stop: ./nyn stop"
 }
@@ -325,6 +604,95 @@ spawn_schema() {
     fi
 }
 
+# Download vision model
+download_vision_model() {
+    local model_name=$1
+    
+    if [ -z "$model_name" ]; then
+        error "Model name required. Usage: ./nyn download-vision-model <model_name>"
+    fi
+    
+    # Validate model name
+    case "${model_name}" in
+        yolo|sam|clip)
+            ;;
+        *)
+            error "Unknown model: ${model_name}"
+            echo ""
+            echo "Available models:"
+            echo "  yolo  - YOLO object detection model"
+            echo "  sam   - SAM (Segment Anything) segmentation model"
+            echo "  clip  - CLIP scene understanding model"
+            exit 1
+            ;;
+    esac
+    
+    info "Downloading vision model: ${model_name}..."
+    
+    # Check if Rust/Cargo is available
+    if ! command -v cargo &> /dev/null; then
+        error "Rust/Cargo not found. Please install Rust: https://rustup.rs/"
+    fi
+    
+    # Try to use existing binary first
+    cd "${SCRIPT_DIR}"
+    if [ -f "${SCRIPT_DIR}/target/release/download_model" ]; then
+        info "Using existing binary..."
+        if ./target/release/download_model "${model_name}" 2>&1; then
+            success "Model '${model_name}' downloaded successfully"
+            return 0
+        else
+            warning "Binary execution failed, trying to rebuild..."
+        fi
+    elif [ -f "${SCRIPT_DIR}/target/debug/download_model" ]; then
+        info "Using existing debug binary..."
+        if ./target/debug/download_model "${model_name}" 2>&1; then
+            success "Model '${model_name}' downloaded successfully"
+            return 0
+        else
+            warning "Binary execution failed, trying to rebuild..."
+        fi
+    fi
+    
+    # Build the download_model binary
+    info "Building download_model binary..."
+    if cargo build --release --bin download_model --package narayana-eye 2>&1; then
+        if [ -f "${SCRIPT_DIR}/target/release/download_model" ]; then
+            info "Running download..."
+            if ./target/release/download_model "${model_name}" 2>&1; then
+                success "Model '${model_name}' downloaded successfully"
+                return 0
+            fi
+        fi
+    else
+        warning "Release build failed, trying debug build..."
+        if cargo build --bin download_model --package narayana-eye 2>&1; then
+            if [ -f "${SCRIPT_DIR}/target/debug/download_model" ]; then
+                info "Running download..."
+                if ./target/debug/download_model "${model_name}" 2>&1; then
+                    success "Model '${model_name}' downloaded successfully"
+                    return 0
+                fi
+            fi
+        fi
+    fi
+    
+    # Fallback: use cargo run (may require OpenCV)
+    warning "Pre-built binary not available, using cargo run..."
+    warning "Note: This requires OpenCV to be installed"
+    if cargo run --release --bin download_model --package narayana-eye -- "${model_name}" 2>&1; then
+        success "Model '${model_name}' downloaded successfully"
+    else
+        error "Failed to download model '${model_name}'"
+        echo ""
+        echo "Troubleshooting:"
+        echo "  1. Ensure OpenCV is installed (see narayana-eye/README.md)"
+        echo "  2. Check your internet connection"
+        echo "  3. Verify the model name is correct (yolo, sam, or clip)"
+        exit 1
+    fi
+}
+
 # Show usage
 usage() {
     echo "Usage: ./nyn [command]"
@@ -335,18 +703,25 @@ usage() {
     echo "  dev     - Start server in foreground (for development)"
     echo "  stop    - Stop server and UI"
     echo "  ui      - Start server and UI together"
+    echo "            Options:"
+    echo "              --seed-avatar  Create and start avatar example CPL"
     echo "  load    - Load database schema from ./schema/schema.nyn"
     echo "  seeds   - Load seed data from ./schema/seeds.nyn"
     echo "  spawn   - Load both schema and seeds"
+    echo "  download-vision-model <name> - Download vision model (yolo, sam, clip)"
     echo ""
     echo "Examples:"
-    echo "  ./nyn build    # Build the server"
-    echo "  ./nyn start    # Start server"
-    echo "  ./nyn ui       # Start server + UI"
-    echo "  ./nyn load     # Load schema"
-    echo "  ./nyn seeds   # Load seeds"
-    echo "  ./nyn spawn    # Load schema + seeds"
-    echo "  ./nyn stop     # Stop everything"
+    echo "  ./nyn build              # Build the server"
+    echo "  ./nyn start              # Start server"
+    echo "  ./nyn ui                 # Start server + UI"
+    echo "  ./nyn ui --seed-avatar   # Start server + UI + seed avatar example"
+    echo "  ./nyn load               # Load schema"
+    echo "  ./nyn seeds              # Load seeds"
+    echo "  ./nyn spawn              # Load schema + seeds"
+    echo "  ./nyn download-vision-model yolo  # Download YOLO model"
+    echo "  ./nyn download-vision-model sam   # Download SAM model"
+    echo "  ./nyn download-vision-model clip  # Download CLIP model"
+    echo "  ./nyn stop               # Stop everything"
 }
 
 # Main command handler
@@ -369,7 +744,8 @@ case "${1:-}" in
         ;;
     ui)
         print_banner
-        start_ui_mode
+        shift  # Remove 'ui' command
+        start_ui_mode "$@"
         ;;
     load)
         print_banner
@@ -382,6 +758,19 @@ case "${1:-}" in
     spawn)
         print_banner
         spawn_schema
+        ;;
+    download-vision-model)
+        print_banner
+        if [ -z "$2" ]; then
+            error "Model name required. Usage: ./nyn download-vision-model <model_name>"
+            echo ""
+            echo "Available models:"
+            echo "  yolo  - YOLO object detection model"
+            echo "  sam   - SAM (Segment Anything) segmentation model"
+            echo "  clip  - CLIP scene understanding model"
+            exit 1
+        fi
+        download_vision_model "$2"
         ;;
     *)
         print_banner

@@ -156,6 +156,8 @@ impl WorldBroker {
         
         info!("Stopping World Broker");
 
+        // CNS integration is handled externally
+
         // Stop all adapters
         let adapters = self.adapters.read();
         let adapter_names: Vec<String> = adapters.keys().cloned().collect();

@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '../lib/api'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { Activity, Database, Zap, Brain as BrainIcon, Code, Wifi, WifiOff } from 'lucide-react'
+import { Activity, Database, Zap, Brain as BrainIcon, Code, Wifi, WifiOff, RefreshCw } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts'
 
 interface RealTimeMetric {
@@ -243,11 +243,45 @@ export default function Dashboard() {
             )}
           </p>
         </div>
-        {lastUpdate && (
-          <div className="text-sm text-gray-500">
-            Last update: {lastUpdate.toLocaleTimeString()}
-          </div>
-        )}
+        <div className="flex items-center gap-4">
+          {lastUpdate && (
+            <div className="text-sm text-gray-500">
+              Last update: {lastUpdate.toLocaleTimeString()}
+            </div>
+          )}
+          <button
+            onClick={async () => {
+              // Manually refresh all data
+              const [stats, tablesData, brainsData, workersData] = await Promise.all([
+                apiClient.getStats(),
+                apiClient.getTables(),
+                apiClient.getBrains(),
+                apiClient.getWorkers(),
+              ])
+              
+              if (stats) {
+                setSystemStats({
+                  total_queries: stats.total_queries || 0,
+                  avg_latency_ms: stats.avg_duration_ms || 0,
+                  total_rows_read: stats.total_rows_read || 0,
+                  total_rows_inserted: stats.total_rows_inserted || 0,
+                  tables: tablesData?.length || 0,
+                  brains: brainsData?.length || 0,
+                  workers: workersData?.length || 0,
+                  active_connections: 0,
+                })
+              }
+              if (tablesData) setTables(tablesData)
+              if (brainsData) setBrains(brainsData)
+              if (workersData) setWorkers(workersData)
+              setLastUpdate(new Date())
+            }}
+            className="btn-secondary flex items-center gap-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Stats Cards */}

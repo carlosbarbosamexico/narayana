@@ -25,6 +25,9 @@ ahash = { workspace = true }
 chrono = { workspace = true }
 futures-util = "0.3"
 
+[features]
+default = []
+
 [dev-dependencies]
 tokio-test = { workspace = true }
 proptest = { workspace = true }

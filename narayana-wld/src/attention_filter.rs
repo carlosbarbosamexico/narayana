@@ -136,11 +136,12 @@ impl AttentionFilter {
             const MAX_EVENT_TYPES: usize = 10_000;
             if model.event_type_counts.len() > MAX_EVENT_TYPES {
                 // Remove least frequent event types
-                let mut entries: Vec<_> = model.event_type_counts.iter().collect();
-                entries.sort_by_key(|(_, &count)| count);
-                let to_remove = entries.len() - MAX_EVENT_TYPES;
-                for (key, _) in entries.iter().take(to_remove) {
-                    model.event_type_counts.remove(*key);
+                let mut entries: Vec<_> = model.event_type_counts.iter().map(|(k, v)| (k.clone(), *v)).collect();
+                entries.sort_by_key(|(_, count)| *count);
+                let to_remove = entries.len().saturating_sub(MAX_EVENT_TYPES);
+                let keys_to_remove: Vec<_> = entries.iter().take(to_remove).map(|(key, _)| key.clone()).collect();
+                for key in keys_to_remove {
+                    model.event_type_counts.remove(&key);
                 }
             }
         }

@@ -8,6 +8,7 @@ use narayana_core::{
 use narayana_storage::ColumnStore;
 use async_trait::async_trait;
 use std::sync::Arc;
+use std::collections::HashMap;
 use serde_json::Value as JsonValue;
 
 /// Connection trait for database operations
@@ -45,6 +46,138 @@ pub trait Connection: Send + Sync {
         // Default implementation returns None
         // Implementations can override to provide config
         Ok(None)
+    }
+
+    /// Add vector to index
+    async fn add_vector(
+        &self,
+        index: &str,
+        id: u64,
+        vector: Vec<f32>,
+        metadata: HashMap<String, JsonValue>,
+    ) -> Result<()> {
+        Err(Error::Query("Vector operations require RemoteConnection".to_string()))
+    }
+
+    /// Batch add vectors to index
+    async fn add_vectors_batch(
+        &self,
+        index: &str,
+        vectors: Vec<(u64, Vec<f32>, HashMap<String, JsonValue>)>,
+    ) -> Result<()> {
+        Err(Error::Query("Vector operations require RemoteConnection".to_string()))
+    }
+
+    /// Search vectors
+    async fn search_vectors(
+        &self,
+        index: &str,
+        vector: Vec<f32>,
+        k: usize,
+        filters: Option<HashMap<String, JsonValue>>,
+    ) -> Result<Vec<(u64, f32)>> {
+        Err(Error::Query("Vector operations require RemoteConnection".to_string()))
+    }
+
+    /// List webhooks
+    async fn list_webhooks(&self) -> Result<Vec<JsonValue>> {
+        Err(Error::Query("Webhook operations require RemoteConnection".to_string()))
+    }
+
+    /// Delete webhook
+    async fn delete_webhook(&self, id: &str) -> Result<()> {
+        Err(Error::Query("Webhook operations require RemoteConnection".to_string()))
+    }
+
+    /// Create webhook
+    async fn create_webhook(
+        &self,
+        name: &str,
+        url: &str,
+        events: Vec<String>,
+        scope: Option<String>,
+    ) -> Result<JsonValue> {
+        Err(Error::Query("Webhook operations require RemoteConnection".to_string()))
+    }
+
+    /// Train ML model
+    async fn train_model(
+        &self,
+        model_type: &str,
+        training_data: Option<String>,
+        params: Option<HashMap<String, JsonValue>>,
+    ) -> Result<JsonValue> {
+        Err(Error::Query("ML operations require RemoteConnection".to_string()))
+    }
+
+    /// Predict using ML model
+    async fn predict_model(
+        &self,
+        model_id: &str,
+        input: JsonValue,
+    ) -> Result<JsonValue> {
+        Err(Error::Query("ML operations require RemoteConnection".to_string()))
+    }
+
+    /// Extract features from table
+    async fn extract_features(
+        &self,
+        table: &str,
+        columns: Option<Vec<String>>,
+    ) -> Result<Vec<Vec<f32>>> {
+        Err(Error::Query("ML operations require RemoteConnection".to_string()))
+    }
+
+    /// Execute window function
+    async fn execute_window_function(
+        &self,
+        table: &str,
+        function: &str,
+        partition_by: Option<Vec<String>>,
+        order_by: Option<Vec<String>>,
+    ) -> Result<Vec<JsonValue>> {
+        Err(Error::Query("Analytics operations require RemoteConnection".to_string()))
+    }
+
+    /// Execute statistical function
+    async fn execute_statistical_function(
+        &self,
+        table: &str,
+        function: &str,
+        column: Option<&str>,
+    ) -> Result<f64> {
+        Err(Error::Query("Analytics operations require RemoteConnection".to_string()))
+    }
+
+    /// Execute time series analysis
+    async fn execute_timeseries_analysis(
+        &self,
+        table: &str,
+        time_column: &str,
+        value_column: &str,
+        analysis_type: Option<&str>,
+    ) -> Result<Vec<JsonValue>> {
+        Err(Error::Query("Analytics operations require RemoteConnection".to_string()))
+    }
+
+    /// Execute aggregation
+    async fn execute_aggregation(
+        &self,
+        table: &str,
+        aggregations: Vec<JsonValue>,
+        group_by: Option<Vec<String>>,
+    ) -> Result<Vec<JsonValue>> {
+        Err(Error::Query("Analytics operations require RemoteConnection".to_string()))
+    }
+
+    /// Sync with peer
+    async fn sync_peer(&self, peer_id: &str) -> Result<JsonValue> {
+        Err(Error::Query("Sync operations require RemoteConnection".to_string()))
+    }
+
+    /// Get sync status
+    async fn sync_status(&self) -> Result<JsonValue> {
+        Err(Error::Query("Sync operations require RemoteConnection".to_string()))
     }
 }
 
@@ -374,5 +507,254 @@ impl Connection for RemoteConnection {
         // Parse response to find table - would need to match server format
         Ok(None)
     }
+
+    async fn add_vector(
+        &self,
+        index: &str,
+        id: u64,
+        vector: Vec<f32>,
+        metadata: HashMap<String, JsonValue>,
+    ) -> Result<()> {
+        let body = serde_json::json!({
+            "id": id,
+            "vector": vector,
+            "metadata": metadata,
+        });
+        self.post_json(&format!("/api/v1/vector/{}/add", index), body).await?;
+        Ok(())
+    }
+
+    async fn add_vectors_batch(
+        &self,
+        index: &str,
+        vectors: Vec<(u64, Vec<f32>, HashMap<String, JsonValue>)>,
+    ) -> Result<()> {
+        let vectors_json: Vec<serde_json::Value> = vectors
+            .into_iter()
+            .map(|(id, vector, metadata)| {
+                serde_json::json!({
+                    "id": id,
+                    "vector": vector,
+                    "metadata": metadata,
+                })
+            })
+            .collect();
+        
+        let body = serde_json::json!({
+            "vectors": vectors_json,
+        });
+        self.post_json(&format!("/api/v1/vector/{}/add_batch", index), body).await?;
+        Ok(())
+    }
+
+    async fn search_vectors(
+        &self,
+        index: &str,
+        vector: Vec<f32>,
+        k: usize,
+        filters: Option<HashMap<String, JsonValue>>,
+    ) -> Result<Vec<(u64, f32)>> {
+        let body = serde_json::json!({
+            "index": index,
+            "vector": vector,
+            "k": k,
+            "filters": filters,
+        });
+        
+        let response: serde_json::Value = self.post_json("/api/v1/vector/search", body).await?;
+        
+        // Parse results from response
+        if let Some(results_array) = response.get("results").and_then(|r| r.as_array()) {
+            let mut results = Vec::new();
+            for result in results_array {
+                if let (Some(id), Some(similarity)) = (
+                    result.get("id").and_then(|i| i.as_u64()),
+                    result.get("similarity").and_then(|s| s.as_f64()),
+                ) {
+                    results.push((id, similarity as f32));
+                }
+            }
+            Ok(results)
+        } else {
+            Err(Error::Query("Invalid response format from vector search".to_string()))
+        }
+    }
+
+    async fn list_webhooks(&self) -> Result<Vec<JsonValue>> {
+        let response: JsonValue = self.get_json("/api/v1/webhooks").await?;
+        if let Some(webhooks_array) = response.get("webhooks").and_then(|w| w.as_array()) {
+            Ok(webhooks_array.clone())
+        } else if let Some(webhooks_array) = response.as_array() {
+            Ok(webhooks_array.clone())
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+    async fn delete_webhook(&self, id: &str) -> Result<()> {
+        self.delete_request(&format!("/api/v1/webhooks/{}", id)).await
+    }
+
+    async fn create_webhook(
+        &self,
+        name: &str,
+        url: &str,
+        events: Vec<String>,
+        scope: Option<String>,
+    ) -> Result<JsonValue> {
+        let body = serde_json::json!({
+            "name": name,
+            "url": url,
+            "events": events,
+            "scope": scope,
+        });
+        self.post_json("/api/v1/webhooks", body).await
+    }
+
+    async fn train_model(
+        &self,
+        model_type: &str,
+        training_data: Option<String>,
+        params: Option<HashMap<String, JsonValue>>,
+    ) -> Result<JsonValue> {
+        let body = serde_json::json!({
+            "model_type": model_type,
+            "training_data": training_data,
+            "params": params,
+        });
+        self.post_json("/api/v1/ml/train", body).await
+    }
+
+    async fn predict_model(
+        &self,
+        model_id: &str,
+        input: JsonValue,
+    ) -> Result<JsonValue> {
+        let body = serde_json::json!({
+            "input": input,
+        });
+        self.post_json(&format!("/api/v1/ml/predict/{}", model_id), body).await
+    }
+
+    async fn extract_features(
+        &self,
+        table: &str,
+        columns: Option<Vec<String>>,
+    ) -> Result<Vec<Vec<f32>>> {
+        let body = serde_json::json!({
+            "columns": columns,
+        });
+        let response: JsonValue = self.post_json(&format!("/api/v1/ml/extract/{}", table), body).await?;
+        
+        // Parse features from response
+        if let Some(features_array) = response.get("features").and_then(|f| f.as_array()) {
+            let mut features = Vec::new();
+            for feature_vec in features_array {
+                if let Some(vec_array) = feature_vec.as_array() {
+                    let vec: Vec<f32> = vec_array
+                        .iter()
+                        .filter_map(|v| v.as_f64().map(|f| f as f32))
+                        .collect();
+                    features.push(vec);
+                }
+            }
+            Ok(features)
+        } else {
+            Err(Error::Query("Invalid response format from feature extraction".to_string()))
+        }
+    }
+
+    async fn execute_window_function(
+        &self,
+        table: &str,
+        function: &str,
+        partition_by: Option<Vec<String>>,
+        order_by: Option<Vec<String>>,
+    ) -> Result<Vec<JsonValue>> {
+        let body = serde_json::json!({
+            "table": table,
+            "function": function,
+            "partition_by": partition_by,
+            "order_by": order_by,
+        });
+        let response: JsonValue = self.post_json("/api/v1/analytics/window", body).await?;
+        
+        if let Some(results_array) = response.get("results").and_then(|r| r.as_array()) {
+            Ok(results_array.clone())
+        } else {
+            Err(Error::Query("Invalid response format from window function".to_string()))
+        }
+    }
+
+    async fn execute_statistical_function(
+        &self,
+        table: &str,
+        function: &str,
+        column: Option<&str>,
+    ) -> Result<f64> {
+        let body = serde_json::json!({
+            "table": table,
+            "function": function,
+            "column": column,
+        });
+        let response: JsonValue = self.post_json("/api/v1/analytics/statistical", body).await?;
+        
+        if let Some(result) = response.get("result").and_then(|r| r.as_f64()) {
+            Ok(result)
+        } else {
+            Err(Error::Query("Invalid response format from statistical function".to_string()))
+        }
+    }
+
+    async fn execute_timeseries_analysis(
+        &self,
+        table: &str,
+        time_column: &str,
+        value_column: &str,
+        analysis_type: Option<&str>,
+    ) -> Result<Vec<JsonValue>> {
+        let body = serde_json::json!({
+            "table": table,
+            "time_column": time_column,
+            "value_column": value_column,
+            "analysis_type": analysis_type,
+        });
+        let response: JsonValue = self.post_json("/api/v1/analytics/timeseries", body).await?;
+        
+        if let Some(results_array) = response.get("results").and_then(|r| r.as_array()) {
+            Ok(results_array.clone())
+        } else {
+            Err(Error::Query("Invalid response format from time series analysis".to_string()))
+        }
+    }
+
+    async fn execute_aggregation(
+        &self,
+        table: &str,
+        aggregations: Vec<JsonValue>,
+        group_by: Option<Vec<String>>,
+    ) -> Result<Vec<JsonValue>> {
+        let body = serde_json::json!({
+            "table": table,
+            "aggregations": aggregations,
+            "group_by": group_by,
+        });
+        let response: JsonValue = self.post_json("/api/v1/analytics/aggregate", body).await?;
+        
+        if let Some(results_array) = response.get("results").and_then(|r| r.as_array()) {
+            Ok(results_array.clone())
+        } else {
+            Err(Error::Query("Invalid response format from aggregation".to_string()))
+        }
+    }
+
+    async fn sync_peer(&self, peer_id: &str) -> Result<JsonValue> {
+        self.post_json(&format!("/api/v1/sync/peer/{}", peer_id), serde_json::json!({})).await
+    }
+
+    async fn sync_status(&self) -> Result<JsonValue> {
+        self.get_json("/api/v1/sync/status").await
+    }
 }
+
 

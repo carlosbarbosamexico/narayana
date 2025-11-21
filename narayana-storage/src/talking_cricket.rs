@@ -32,6 +32,7 @@ pub struct LLMMessage {
 // WorldAction is defined in narayana-wld, but we need a trait or type alias
 // For now, we'll use a generic approach - the actual WorldAction will be passed from narayana-wld
 // This is a placeholder - in practice, Talking Cricket will work with narayana-wld::WorldAction
+// JsonValue is already imported above as an alias
 
 /// Configuration for Talking Cricket
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -511,7 +512,10 @@ impl TalkingCricket {
         use std::collections::hash_map::DefaultHasher;
         
         // Serialize to JSON string for hashing
-        let json_str = serde_json::to_string(action).unwrap_or_else(|_| "{}".to_string());
+        let json_str = serde_json::to_string(action).unwrap_or_else(|_| {
+            // Fallback: try to serialize as a simple string representation
+            format!("<action:{}>", std::any::type_name::<T>())
+        });
         let mut hasher = DefaultHasher::new();
         json_str.hash(&mut hasher);
         format!("{:x}", hasher.finish())

@@ -25,7 +25,8 @@ pub use config::*;
 pub use error::*;
 pub use manager::LLMManager;
 pub use providers::Provider;
-pub use rag::Memory as RAGMemory;
+pub use rag::{Memory as RAGMemory, BrainInterface};
+pub use function_calling::BrainFunctionInterface;
 
 #[cfg(test)]
 mod tests {

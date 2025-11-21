@@ -9,7 +9,9 @@ import {
   LogOut,
   Brain,
   Code,
-  Webhook
+  Webhook,
+  Terminal,
+  RefreshCw
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuthStore } from '../store/auth'
@@ -22,8 +24,10 @@ const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Tables', href: '/tables', icon: Database },
   { name: 'Brains', href: '/brains', icon: Brain },
+  { name: 'CPLs', href: '/cpls', icon: RefreshCw },
   { name: 'Workers', href: '/workers', icon: Code },
   { name: 'Webhooks', href: '/webhooks', icon: Webhook },
+  { name: 'Developer Hub', href: '/developer', icon: Terminal },
   { name: 'Query', href: '/query', icon: Play },
   { name: 'Performance', href: '/performance', icon: Activity },
   { name: 'Settings', href: '/settings', icon: Settings },

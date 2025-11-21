@@ -7,7 +7,7 @@ use narayana_core::banner;
 use narayana_storage::*;
 use std::sync::Arc;
 use tokio::signal;
-use tracing::{info, warn};
+use tracing::{info, warn, error};
 use tracing_subscriber;
 
 #[tokio::main]
@@ -124,8 +124,15 @@ async fn main() -> anyhow::Result<()> {
         info!("   ✅ Cohere API key loaded");
     }
     
-    brain.set_llm_manager(llm_manager.clone());
-    info!("✅ LLM manager ready (supports OpenAI, Anthropic, Google, Cohere)");
+    #[cfg(feature = "llm")]
+    {
+        (*brain).set_llm_manager(llm_manager.clone());
+        info!("✅ LLM manager ready (supports OpenAI, Anthropic, Google, Cohere)");
+    }
+    #[cfg(not(feature = "llm"))]
+    {
+        info!("⚠️  LLM feature not enabled, skipping LLM manager setup");
+    }
     info!("✅ Cognitive brain ready");
 
     // Initialize query learning
@@ -138,6 +145,11 @@ async fn main() -> anyhow::Result<()> {
     info!("🔔 Initializing webhooks...");
     let webhook_manager = Arc::new(narayana_storage::webhooks::WebhookManager::new());
     info!("✅ Webhooks ready");
+
+    // Initialize vector store
+    info!("🔍 Initializing vector store...");
+    let vector_store = Arc::new(narayana_storage::vector_search::VectorStore::new());
+    info!("✅ Vector store ready");
 
     // Initialize self-healing
     info!("🏥 Initializing self-healing...");
@@ -197,11 +209,112 @@ async fn main() -> anyhow::Result<()> {
     info!("JWT secret loaded ({} chars)", jwt_secret.len());
     let token_manager = Arc::new(narayana_server::security::TokenManager::new(jwt_secret));
 
+    // Initialize CPL Manager
+    info!("🔄 Initializing CPL Manager...");
+    use narayana_storage::conscience_persistent_loop::CPLConfig;
+    let cpl_config = CPLConfig::default();
+    let cpl_manager = Arc::new(narayana_storage::cpl_manager::CPLManager::new(cpl_config));
+    // Optionally set shared brain for all CPLs
+    // cpl_manager.set_shared_brain(brain.clone());
+    info!("✅ CPL Manager ready");
+
+    // Initialize Avatar Bridge (if narayana-me is available)
+    #[cfg(feature = "avatar")]
+    let avatar_bridge_handle: Option<tokio::task::JoinHandle<()>> = {
+        info!("🎭 Initializing Avatar Bridge...");
+        use narayana_me::{AvatarBroker, AvatarConfig, AvatarProviderType, MultimodalManager, AvatarBridge};
+        use std::sync::Arc;
+        use tokio::sync::RwLock;
+        
+        // Create default avatar config
+        let avatar_config = AvatarConfig {
+            enabled: true,
+            provider: AvatarProviderType::BeyondPresence,
+            avatar_id: None,
+            expression_sensitivity: 0.7,
+            animation_speed: 1.0,
+            websocket_port: Some(8081),
+            enable_lip_sync: true,
+            enable_gestures: true,
+            provider_config: None,
+            enable_vision: true,
+            vision_config: None,
+            enable_audio_input: true,
+            audio_input_config: None,
+            enable_tts: true,
+            tts_config: None,
+        };
+        
+        // Create avatar broker and multimodal manager
+        match AvatarBroker::new(avatar_config.clone()) {
+            Ok(broker) => {
+                let avatar_broker = Arc::new(RwLock::new(broker));
+                let multimodal_manager = Arc::new(MultimodalManager::new());
+                
+                // Use LLM manager if available (defined earlier in the function)
+                #[cfg(feature = "llm")]
+                let avatar_llm_manager = Some(Arc::clone(&llm_manager));
+                #[cfg(not(feature = "llm"))]
+                let _avatar_llm_manager: Option<Arc<()>> = None;
+                
+                // Create and start avatar bridge
+                let avatar_bridge = Arc::new(AvatarBridge::new(
+                    avatar_broker,
+                    multimodal_manager,
+                    #[cfg(feature = "llm")]
+                    avatar_llm_manager,
+                    8081, // Avatar WebSocket port
+                ));
+                
+                // Start avatar bridge in a separate task
+                let bridge_clone = Arc::clone(&avatar_bridge);
+                let handle = tokio::spawn(async move {
+                    info!("🎭 Avatar bridge starting on 0.0.0.0:8081...");
+                    match bridge_clone.start().await {
+                        Ok(_) => {
+                            info!("✅ Avatar bridge stopped gracefully");
+                        }
+                        Err(e) => {
+                            error!("❌ Avatar bridge crashed: {}", e);
+                            error!("   This means WebSocket connections to ws://localhost:8081/avatar/ws will fail!");
+                            error!("   Check if port 8081 is already in use or if there's a binding error.");
+                        }
+                    }
+                });
+                
+                // Give the bridge a moment to start
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                
+                // Verify bridge is actually listening
+                match tokio::net::TcpStream::connect("127.0.0.1:8081").await {
+                    Ok(_) => {
+                        info!("✅ Avatar Bridge is listening on port 8081");
+                    }
+                    Err(e) => {
+                        warn!("⚠️  Avatar Bridge might not be listening yet: {}", e);
+                        warn!("   This could be normal if the bridge is still starting.");
+                        warn!("   If connections fail, check server logs for errors.");
+                    }
+                }
+                
+                Some(handle)
+            }
+            Err(e) => {
+                error!("❌ Failed to create AvatarBroker: {}. Avatar bridge will not start.", e);
+                None
+            }
+        }
+    };
+    #[cfg(not(feature = "avatar"))]
+    let avatar_bridge_handle: Option<tokio::task::JoinHandle<()>> = None;
+
     // Create WebSocket state
     let ws_state = Arc::new(narayana_server::websocket::WebSocketState {
         manager: ws_manager.clone(),
         bridge: ws_bridge.clone(),
         token_manager: token_manager.clone(),
+        storage: storage.clone(),
+        db_manager: db_manager.clone(),
     });
 
     // Start HTTP server
@@ -216,6 +329,8 @@ async fn main() -> anyhow::Result<()> {
         brain.clone(),
         query_learning.clone(),
         Some(ws_state.clone()),
+        Some(cpl_manager.clone()),
+        vector_store.clone(),
     ).await?;
     info!("✅ HTTP server ready on http://localhost:{}", config.http_port);
 
@@ -240,6 +355,11 @@ async fn main() -> anyhow::Result<()> {
 
     // Graceful shutdown
     info!("🛑 Shutting down NarayanaDB...");
+    #[cfg(feature = "avatar")]
+    if let Some(handle) = avatar_bridge_handle {
+        handle.abort();
+        info!("🎭 Avatar Bridge stopped");
+    }
     shutdown_gracefully(
         http_server,
         auto_scaler,
@@ -453,6 +573,8 @@ async fn start_http_server(
     brain: Arc<narayana_storage::cognitive::CognitiveBrain>,
     query_learning: Arc<narayana_storage::query_learning::QueryLearningEngine>,
     ws_state: Option<Arc<narayana_server::websocket::WebSocketState>>,
+    cpl_manager: Option<Arc<narayana_storage::cpl_manager::CPLManager>>,
+    vector_store: Arc<narayana_storage::vector_search::VectorStore>,
 ) -> anyhow::Result<tokio::task::JoinHandle<()>> {
     use narayana_server::http::*;
     use std::net::SocketAddr;
@@ -490,6 +612,8 @@ async fn start_http_server(
         token_manager: api_token_manager,
         rate_limiter,
         api_rate_limiter,
+        cpl_manager,
+        vector_store,
     };
     
     // Create router

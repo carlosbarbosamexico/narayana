@@ -1,11 +1,17 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { apiClient } from '../lib/api'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { Brain as BrainIcon, Plus, MemoryStick, Clock } from 'lucide-react'
+import { Brain as BrainIcon, Plus, MemoryStick, Clock, Eye } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 export default function Brains() {
-  const [selectedBrain, setSelectedBrain] = useState<string | null>(null)
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [selectedBrain] = useState<string | null>(null)
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [newBrainId, setNewBrainId] = useState('')
+  const [newMemoryTypes, setNewMemoryTypes] = useState<string[]>([])
 
   // WebSocket for real-time updates
   const { isConnected, subscribe } = useWebSocket({
@@ -36,7 +42,10 @@ export default function Brains() {
           </h1>
           <p className="text-gray-600 mt-1">Manage and monitor cognitive brains</p>
         </div>
-        <button className="btn-primary flex items-center gap-2">
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="btn-primary flex items-center gap-2"
+        >
           <Plus className="w-4 h-4" />
           Create Brain
         </button>
@@ -81,15 +90,17 @@ export default function Brains() {
             {brains.map((brain) => (
               <div
                 key={brain.brain_id}
-                className={`p-4 border rounded-lg cursor-pointer transition-colors ${
+                className={`p-4 border rounded-lg transition-colors ${
                   selectedBrain === brain.brain_id
                     ? 'border-primary-500 bg-primary-50'
                     : 'border-gray-200 hover:border-gray-300'
                 }`}
-                onClick={() => setSelectedBrain(brain.brain_id)}
               >
                 <div className="flex items-center justify-between">
-                  <div>
+                  <div
+                    className="flex-1 cursor-pointer"
+                    onClick={() => navigate(`/brains/${brain.brain_id}`)}
+                  >
                     <h3 className="font-semibold text-gray-900">{brain.brain_id}</h3>
                     <div className="flex flex-wrap gap-2 mt-2">
                       {brain.memory_types.map((type) => (
@@ -107,12 +118,21 @@ export default function Brains() {
                       </p>
                     )}
                   </div>
-                  <div className="text-right">
-                    <span className="text-sm text-gray-500">Status</span>
-                    <div className="mt-1">
-                      <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
-                        Active
-                      </span>
+                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => navigate(`/brains/${brain.brain_id}`)}
+                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      title="View details"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    <div className="text-right">
+                      <span className="text-sm text-gray-500">Status</span>
+                      <div className="mt-1">
+                        <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
+                          Active
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -127,6 +147,72 @@ export default function Brains() {
           </div>
         )}
       </div>
+
+      {/* Create Brain Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Create New Brain</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Brain ID
+                </label>
+                <input
+                  type="text"
+                  value={newBrainId}
+                  onChange={(e) => setNewBrainId(e.target.value)}
+                  className="input"
+                  placeholder="Enter brain ID"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Memory Types (comma-separated)
+                </label>
+                <input
+                  type="text"
+                  value={newMemoryTypes.join(', ')}
+                  onChange={(e) => setNewMemoryTypes(e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
+                  className="input"
+                  placeholder="episodic, semantic, procedural"
+                />
+              </div>
+              <div className="flex gap-3 justify-end pt-4">
+                <button
+                  onClick={() => {
+                    setShowCreateModal(false)
+                    setNewBrainId('')
+                    setNewMemoryTypes([])
+                  }}
+                  className="btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      await apiClient.createBrain(newBrainId, newMemoryTypes.length > 0 ? newMemoryTypes : undefined)
+                      setShowCreateModal(false)
+                      setNewBrainId('')
+                      setNewMemoryTypes([])
+                      // Invalidate queries to refresh the list
+                      queryClient.invalidateQueries({ queryKey: ['brains'] })
+                    } catch (error) {
+                      console.error('Failed to create brain:', error)
+                      alert('Failed to create brain')
+                    }
+                  }}
+                  disabled={!newBrainId}
+                  className="btn-primary"
+                >
+                  Create
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
