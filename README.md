@@ -1288,6 +1288,7 @@ For questions, collaboration opportunities, or research inquiries, please reach 
 ## Acknowledgments
 
 Developed by Carlos Barbosa
+
 Contributors: Lucas Gualberto Silva, Rafael Couto
 
 Special thanks to:
